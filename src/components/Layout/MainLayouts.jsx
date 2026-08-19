@@ -1,6 +1,6 @@
 // src/components/Layout/MainLayouts.jsx
-import React, { useState, useEffect } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import React, { useState } from "react";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useAppStore } from "../../lib/zustand";
 import { MENU_ITEMS } from "../../lib/constants";
 import { translations } from "../../lib/i18n";
@@ -14,6 +14,9 @@ import {
   Bars3Icon,
   XMarkIcon,
   LanguageIcon,
+  Square3Stack3DIcon, // Для Объектлар
+  AdjustmentsHorizontalIcon, // Для Ҳисоблагич турлари
+  SignalIcon, // Для Тизим журнали
 } from "@heroicons/react/24/outline";
 
 const iconMap = {
@@ -23,16 +26,16 @@ const iconMap = {
   Building2: BuildingStorefrontIcon,
   FileText: DocumentTextIcon,
   Users: UsersIcon,
+  Factory: Square3Stack3DIcon, // Замена
+  Gauge: AdjustmentsHorizontalIcon, // Замена
+  Activity: SignalIcon, // Замена
 };
 
 const MainLayouts = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { userData, language, setLanguage, logout } = useAppStore();
   const navigate = useNavigate();
-  const location = useLocation();
   const t = translations[language];
-
-  console.log("MainLayouts rendered, userData:", userData);
 
   const menuItems = userData ? MENU_ITEMS[userData.role] || [] : [];
 
@@ -119,8 +122,6 @@ const MainLayouts = () => {
             <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white">
               <SidebarContent
                 menuItems={menuItems}
-                language={language}
-                t={t}
                 onNavigate={() => setSidebarOpen(false)}
               />
             </div>
@@ -130,7 +131,7 @@ const MainLayouts = () => {
         {/* Desktop sidebar */}
         <div className="hidden lg:flex lg:flex-shrink-0">
           <div className="flex flex-col w-64">
-            <SidebarContent menuItems={menuItems} language={language} t={t} />
+            <SidebarContent menuItems={menuItems} />
           </div>
         </div>
 
@@ -147,7 +148,7 @@ const MainLayouts = () => {
   );
 };
 
-const SidebarContent = ({ menuItems, language, t, onNavigate }) => {
+const SidebarContent = ({ menuItems, onNavigate }) => {
   const navigate = useNavigate();
 
   const handleNavigation = (path) => {

@@ -21,10 +21,12 @@ import Regions from "./pages/Regions/Regions";
 import Cities from "./pages/Regions/Cities";
 import Ltds from "./pages/Ltds/Ltds";
 import Objects from "./pages/Objects/Objects";
+import ObjectTypes from "./pages/Objects/ObjectTypes";
+import MeterTypes from "./pages/Objects/MeterTypes";
 import Reports from "./pages/Reports/Reports";
 import UsersPage from "./pages/Users/UsersPage";
-import { Toaster } from "react-hot-toast";
 import LogsPage from "./pages/Logs/LogsPage";
+import { Toaster } from "react-hot-toast";
 
 function App() {
   const setUser = useAppStore((state) => state.setUser);
@@ -58,7 +60,6 @@ function App() {
     const role = currentUserData?.role || "guest";
 
     if (!hasAccess(role, allowedRoles)) {
-      // Перенаправляем на домашнюю страницу в зависимости от роли
       switch (role) {
         case "superadmin":
           return <Navigate to="/home-superadmin" replace />;
@@ -121,15 +122,6 @@ function App() {
           ),
         },
         {
-          path: "/logs",
-          element: (
-            <ProtectedLayout
-              allowedRoles={["superadmin"]}
-              element={<LogsPage />}
-            />
-          ),
-        },
-        {
           path: "/home-metrolog",
           element: (
             <ProtectedLayout
@@ -184,6 +176,24 @@ function App() {
           ),
         },
         {
+          path: "/object-types",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin"]}
+              element={<ObjectTypes />}
+            />
+          ),
+        },
+        {
+          path: "/meter-types",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin"]}
+              element={<MeterTypes />}
+            />
+          ),
+        },
+        {
           path: "/reports",
           element: (
             <ProtectedLayout
@@ -204,6 +214,15 @@ function App() {
             <ProtectedLayout
               allowedRoles={["superadmin", "admin"]}
               element={<UsersPage />}
+            />
+          ),
+        },
+        {
+          path: "/logs",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin"]}
+              element={<LogsPage />}
             />
           ),
         },
