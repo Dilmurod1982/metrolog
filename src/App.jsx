@@ -27,6 +27,12 @@ import Reports from "./pages/Reports/Reports";
 import UsersPage from "./pages/Users/UsersPage";
 import LogsPage from "./pages/Logs/LogsPage";
 import { Toaster } from "react-hot-toast";
+import DocumentTypes from "./pages/Documents/DocumentTypes";
+import DocumentsByObject from "./pages/Documents/DocumentsByObject";
+import DocumentsByType from "./pages/Documents/DocumentsByType";
+
+import ObjectDocuments from "./pages/Documents/ObjectDocuments";
+import TypeDocuments from "./pages/Documents/TypeDocuments";
 
 function App() {
   const setUser = useAppStore((state) => state.setUser);
@@ -223,6 +229,112 @@ function App() {
             <ProtectedLayout
               allowedRoles={["superadmin"]}
               element={<LogsPage />}
+            />
+          ),
+        },
+
+        {
+          path: "/documents-by-object",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin", "tummetrolog", "metrolog"]}
+              element={<DocumentsByObject />}
+            />
+          ),
+        },
+        {
+          path: "/documents-by-type",
+          element: (
+            <ProtectedLayout
+              allowedRoles={[
+                "superadmin",
+                "admin",
+                "tummetrolog",
+                "metrolog",
+                "mexmon",
+              ]}
+              element={<DocumentsByType />}
+            />
+          ),
+        },
+        {
+          path: "/document-types",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin"]}
+              element={<DocumentTypes />}
+            />
+          ),
+        },
+        {
+          path: "/documents-by-object",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin", "tummetrolog", "metrolog"]}
+              element={<DocumentsByObject />}
+            />
+          ),
+        },
+        {
+          path: "/documents-by-type",
+          element: (
+            <ProtectedLayout
+              allowedRoles={[
+                "superadmin",
+                "admin",
+                "tummetrolog",
+                "metrolog",
+                "mexmon",
+              ]}
+              element={<DocumentsByType />}
+            />
+          ),
+        },
+        {
+          path: "/object-documents/:id",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin", "tummetrolog", "metrolog"]}
+              element={<ObjectDocuments />}
+            />
+          ),
+        },
+        {
+          path: "/type-documents/:id",
+          element: (
+            <ProtectedLayout
+              allowedRoles={[
+                "superadmin",
+                "admin",
+                "tummetrolog",
+                "metrolog",
+                "mexmon",
+              ]}
+              element={<TypeDocuments />}
+            />
+          ),
+        },
+        {
+          path: "/object-documents/:id",
+          element: (
+            <ProtectedLayout
+              allowedRoles={["superadmin", "admin", "tummetrolog", "metrolog"]}
+              element={<ObjectDocuments />}
+            />
+          ),
+        },
+        {
+          path: "/type-documents/:id",
+          element: (
+            <ProtectedLayout
+              allowedRoles={[
+                "superadmin",
+                "admin",
+                "tummetrolog",
+                "metrolog",
+                "mexmon",
+              ]}
+              element={<TypeDocuments />}
             />
           ),
         },

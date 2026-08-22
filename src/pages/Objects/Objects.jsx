@@ -42,7 +42,6 @@ const Objects = () => {
   const [objects, setObjects] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [objectTypes, setObjectTypes] = useState([]);
-  const [meterTypes, setMeterTypes] = useState([]);
   const [regions, setRegions] = useState([]);
   const [cities, setCities] = useState([]);
   const [filteredCities, setFilteredCities] = useState([]);
@@ -67,23 +66,6 @@ const Objects = () => {
     objectName: "",
     objectTypeId: "",
     objectTypeName: "",
-    meterTypeId: "",
-    meterTypeName: "",
-    meterSerialNumber: "",
-    meterCertificateNumber: "",
-    meterLastVerificationDate: "",
-    meterNextVerificationDate: "",
-    meterDocumentUrl: "",
-    hasDiaphragm: false,
-    diaphragmCalculationNumber: "",
-    diaphragmCertificateNumber: "",
-    diaphragmLastVerificationDate: "",
-    diaphragmNextVerificationDate: "",
-    diaphragmDocumentUrl: "",
-    ikCertificateNumber: "",
-    ikLastVerificationDate: "",
-    ikNextVerificationDate: "",
-    ikDocumentUrl: "",
   });
 
   // Загрузка данных
@@ -113,14 +95,6 @@ const Objects = () => {
         ...doc.data(),
       }));
       setObjectTypes(objectTypesData);
-
-      // Загрузка типов счетчиков
-      const meterTypesSnapshot = await getDocs(collection(db, "meterTypes"));
-      const meterTypesData = meterTypesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setMeterTypes(meterTypesData);
 
       // Загрузка областей
       const regionsSnapshot = await getDocs(collection(db, "regions"));
@@ -164,11 +138,6 @@ const Objects = () => {
       "cityId",
       "objectName",
       "objectTypeId",
-      "meterTypeId",
-      "meterSerialNumber",
-      "meterCertificateNumber",
-      "meterLastVerificationDate",
-      "meterNextVerificationDate",
     ];
 
     return requiredFields.every(
@@ -183,7 +152,6 @@ const Objects = () => {
       obj.billingAccount?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       obj.objectName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       obj.organizationName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      obj.meterTypeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       obj.regionName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       obj.cityName?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -246,37 +214,6 @@ const Objects = () => {
     }
   };
 
-  const handleMeterTypeChange = (typeId) => {
-    const type = meterTypes.find((t) => t.id === typeId);
-    if (type) {
-      handleInputChange("meterTypeId", type.id);
-      handleInputChange("meterTypeName", type.name);
-      handleInputChange("hasDiaphragm", type.type === "Счетчик с перепадом");
-    }
-  };
-
-  // Загрузка файлов
-  const handleFileUpload = async (field, file, maxSizeMB) => {
-    if (!file) return;
-
-    const maxSize = maxSizeMB * 1024 * 1024;
-    if (file.size > maxSize) {
-      toast.error(`Файл ҳажми ${maxSizeMB} МБ дан ошмаслиги керак`);
-      return;
-    }
-
-    try {
-      const storageRef = ref(storage, `objects/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      handleInputChange(field, downloadURL);
-      toast.success("Файл юкланди");
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      toast.error("Файл юклашда хатолик");
-    }
-  };
-
   // Открытие/закрытие модального окна
   const handleObjectClick = (obj) => {
     setSelectedObject({ ...obj });
@@ -305,23 +242,6 @@ const Objects = () => {
       objectName: "",
       objectTypeId: "",
       objectTypeName: "",
-      meterTypeId: "",
-      meterTypeName: "",
-      meterSerialNumber: "",
-      meterCertificateNumber: "",
-      meterLastVerificationDate: "",
-      meterNextVerificationDate: "",
-      meterDocumentUrl: "",
-      hasDiaphragm: false,
-      diaphragmCalculationNumber: "",
-      diaphragmCertificateNumber: "",
-      diaphragmLastVerificationDate: "",
-      diaphragmNextVerificationDate: "",
-      diaphragmDocumentUrl: "",
-      ikCertificateNumber: "",
-      ikLastVerificationDate: "",
-      ikNextVerificationDate: "",
-      ikDocumentUrl: "",
     });
     setFilteredCities([]);
   };
@@ -395,13 +315,6 @@ const Objects = () => {
     }
   };
 
-  // Форматирование даты
-  const formatDate = (dateStr) => {
-    if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("ru-RU");
-  };
-
   const isFormValid = checkFormValidity();
 
   if (loading) {
@@ -439,7 +352,7 @@ const Objects = () => {
           whileTap={{ scale: 0.98 }}
         >
           <Plus size={20} />
-          Ҳисоблагич қўшиш
+          Объект қўшиш
         </motion.button>
       </motion.div>
 
@@ -486,22 +399,9 @@ const Objects = () => {
                 <th className="px-4 py-4 text-left font-semibold hidden lg:table-cell">
                   Ҳудуд
                 </th>
-                <th className="px-4 py-4 text-left font-semibold">
-                  Ҳисоблагич
+                <th className="px-4 py-4 text-left font-semibold hidden md:table-cell">
+                  Объект тури
                 </th>
-                <th className="px-4 py-4 text-left font-semibold">
-                  Охирги поверка
-                </th>
-                <th className="px-4 py-4 text-left font-semibold">
-                  Поверка муддати
-                </th>
-                <th className="px-4 py-4 text-left font-semibold hidden lg:table-cell">
-                  Шайба поверкаси
-                </th>
-                <th className="px-4 py-4 text-left font-semibold hidden lg:table-cell">
-                  ИК поверкаси
-                </th>
-                <th className="px-4 py-4 text-left font-semibold w-20">Файл</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -546,68 +446,10 @@ const Objects = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-4">
-                    <div>
-                      <div className="font-medium text-gray-800">
-                        {obj.meterTypeName}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {obj.meterSerialNumber}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-gray-600">
-                    {formatDate(obj.meterLastVerificationDate)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs ${
-                        new Date(obj.meterNextVerificationDate) < new Date()
-                          ? "bg-red-100 text-red-800"
-                          : "bg-green-100 text-green-800"
-                      }`}
-                    >
-                      {formatDate(obj.meterNextVerificationDate)}
+                  <td className="px-4 py-4 hidden md:table-cell">
+                    <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
+                      {obj.objectTypeName || "-"}
                     </span>
-                  </td>
-                  <td className="px-4 py-4 text-gray-600 hidden lg:table-cell">
-                    {obj.hasDiaphragm ? (
-                      <div>
-                        <div>
-                          {formatDate(obj.diaphragmLastVerificationDate)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {formatDate(obj.diaphragmNextVerificationDate)}
-                        </div>
-                      </div>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td className="px-4 py-4 text-gray-600 hidden lg:table-cell">
-                    {obj.hasDiaphragm ? (
-                      <div>
-                        <div>{formatDate(obj.ikLastVerificationDate)}</div>
-                        <div className="text-sm text-gray-500">
-                          {formatDate(obj.ikNextVerificationDate)}
-                        </div>
-                      </div>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td className="px-4 py-4">
-                    {obj.meterDocumentUrl && (
-                      <a
-                        href={obj.meterDocumentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-indigo-500 hover:text-indigo-700"
-                      >
-                        <Paperclip size={20} />
-                      </a>
-                    )}
                   </td>
                 </motion.tr>
               ))}
@@ -631,7 +473,7 @@ const Objects = () => {
                 onClick={handleCreateObject}
                 className="bg-indigo-500 text-white px-6 py-2 rounded-lg hover:bg-indigo-600 transition-colors"
               >
-                Ҳисоблагич қўшиш
+                Объект қўшиш
               </button>
             )}
           </motion.div>
@@ -649,7 +491,7 @@ const Objects = () => {
             onClick={handleCloseModal}
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden"
+              className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -661,7 +503,7 @@ const Objects = () => {
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-bold">
                     {isCreating
-                      ? "Ҳисоблагич қўшиш"
+                      ? "Объект қўшиш"
                       : isEditMode
                       ? "Объектни таҳрирлаш"
                       : "Объект ҳақида маълумот"}
@@ -821,402 +663,30 @@ const Objects = () => {
                     </div>
                   </div>
 
-                  {/* Типы */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                        <Factory size={16} />
-                        Объект тури *
-                      </label>
-                      <select
-                        value={
-                          isCreating
-                            ? newObject.objectTypeId
-                            : selectedObject?.objectTypeId || ""
-                        }
-                        onChange={(e) => handleObjectTypeChange(e.target.value)}
-                        disabled={!isCreating && !isEditMode}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                      >
-                        <option value="">Танланг...</option>
-                        {objectTypes.map((type) => (
-                          <option key={type.id} value={type.id}>
-                            {type.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                        <Gauge size={16} />
-                        Ҳисоблагич тури *
-                      </label>
-                      <select
-                        value={
-                          isCreating
-                            ? newObject.meterTypeId
-                            : selectedObject?.meterTypeId || ""
-                        }
-                        onChange={(e) => handleMeterTypeChange(e.target.value)}
-                        disabled={!isCreating && !isEditMode}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                      >
-                        <option value="">Танланг...</option>
-                        {meterTypes.map((type) => (
-                          <option key={type.id} value={type.id}>
-                            {type.name} - {type.type}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* Тип объекта */}
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                      <Factory size={16} />
+                      Объект тури *
+                    </label>
+                    <select
+                      value={
+                        isCreating
+                          ? newObject.objectTypeId
+                          : selectedObject?.objectTypeId || ""
+                      }
+                      onChange={(e) => handleObjectTypeChange(e.target.value)}
+                      disabled={!isCreating && !isEditMode}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
+                    >
+                      <option value="">Танланг...</option>
+                      {objectTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Данные счетчика */}
-                  <div className="border-t pt-6">
-                    <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-4">
-                      <Gauge size={18} />
-                      Ҳисоблагич маълумотлари
-                    </h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Завод рақами *
-                        </label>
-                        <input
-                          type="text"
-                          value={
-                            isCreating
-                              ? newObject.meterSerialNumber
-                              : selectedObject?.meterSerialNumber || ""
-                          }
-                          onChange={(e) =>
-                            handleInputChange(
-                              "meterSerialNumber",
-                              e.target.value
-                            )
-                          }
-                          disabled={!isCreating && !isEditMode}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Сертификат рақами *
-                        </label>
-                        <input
-                          type="text"
-                          value={
-                            isCreating
-                              ? newObject.meterCertificateNumber
-                              : selectedObject?.meterCertificateNumber || ""
-                          }
-                          onChange={(e) =>
-                            handleInputChange(
-                              "meterCertificateNumber",
-                              e.target.value
-                            )
-                          }
-                          disabled={!isCreating && !isEditMode}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Охирги поверка санаси *
-                        </label>
-                        <input
-                          type="date"
-                          value={
-                            isCreating
-                              ? newObject.meterLastVerificationDate
-                              : selectedObject?.meterLastVerificationDate || ""
-                          }
-                          onChange={(e) =>
-                            handleInputChange(
-                              "meterLastVerificationDate",
-                              e.target.value
-                            )
-                          }
-                          disabled={!isCreating && !isEditMode}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Поверка муддати *
-                        </label>
-                        <input
-                          type="date"
-                          value={
-                            isCreating
-                              ? newObject.meterNextVerificationDate
-                              : selectedObject?.meterNextVerificationDate || ""
-                          }
-                          onChange={(e) =>
-                            handleInputChange(
-                              "meterNextVerificationDate",
-                              e.target.value
-                            )
-                          }
-                          disabled={!isCreating && !isEditMode}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Загрузка документа счетчика */}
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Ҳисоблагич ҳужжати (max 1 MB)
-                      </label>
-                      <input
-                        type="file"
-                        onChange={(e) =>
-                          handleFileUpload(
-                            "meterDocumentUrl",
-                            e.target.files[0],
-                            1
-                          )
-                        }
-                        disabled={!isCreating && !isEditMode}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                      />
-                      {(isCreating
-                        ? newObject.meterDocumentUrl
-                        : selectedObject?.meterDocumentUrl) && (
-                        <a
-                          href={
-                            isCreating
-                              ? newObject.meterDocumentUrl
-                              : selectedObject?.meterDocumentUrl
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 mt-2 text-indigo-500 hover:text-indigo-700"
-                        >
-                          <Download size={16} />
-                          Юкланган файл
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Поля для счетчика с перепадом */}
-                  {(isCreating
-                    ? newObject.hasDiaphragm
-                    : selectedObject?.hasDiaphragm) && (
-                    <>
-                      {/* Шайба */}
-                      <div className="border-t pt-6">
-                        <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-4">
-                          <FileText size={18} />
-                          Шайба маълумотлари
-                        </h3>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Ҳисоб рақами
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                isCreating
-                                  ? newObject.diaphragmCalculationNumber
-                                  : selectedObject?.diaphragmCalculationNumber ||
-                                    ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "diaphragmCalculationNumber",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Сертификат рақами
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                isCreating
-                                  ? newObject.diaphragmCertificateNumber
-                                  : selectedObject?.diaphragmCertificateNumber ||
-                                    ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "diaphragmCertificateNumber",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Охирги поверка санаси
-                            </label>
-                            <input
-                              type="date"
-                              value={
-                                isCreating
-                                  ? newObject.diaphragmLastVerificationDate
-                                  : selectedObject?.diaphragmLastVerificationDate ||
-                                    ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "diaphragmLastVerificationDate",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Поверка муддати
-                            </label>
-                            <input
-                              type="date"
-                              value={
-                                isCreating
-                                  ? newObject.diaphragmNextVerificationDate
-                                  : selectedObject?.diaphragmNextVerificationDate ||
-                                    ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "diaphragmNextVerificationDate",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Загрузка документа шайбы */}
-                        <div className="mt-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Шайба ҳужжати (max 3 MB)
-                          </label>
-                          <input
-                            type="file"
-                            onChange={(e) =>
-                              handleFileUpload(
-                                "diaphragmDocumentUrl",
-                                e.target.files[0],
-                                3
-                              )
-                            }
-                            disabled={!isCreating && !isEditMode}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                          />
-                        </div>
-                      </div>
-
-                      {/* ИК */}
-                      <div className="border-t pt-6">
-                        <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-4">
-                          <FileText size={18} />
-                          ИК маълумотлари
-                        </h3>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Сертификат рақами
-                            </label>
-                            <input
-                              type="text"
-                              value={
-                                isCreating
-                                  ? newObject.ikCertificateNumber
-                                  : selectedObject?.ikCertificateNumber || ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "ikCertificateNumber",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Охирги поверка санаси
-                            </label>
-                            <input
-                              type="date"
-                              value={
-                                isCreating
-                                  ? newObject.ikLastVerificationDate
-                                  : selectedObject?.ikLastVerificationDate || ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "ikLastVerificationDate",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Поверка муддати
-                            </label>
-                            <input
-                              type="date"
-                              value={
-                                isCreating
-                                  ? newObject.ikNextVerificationDate
-                                  : selectedObject?.ikNextVerificationDate || ""
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  "ikNextVerificationDate",
-                                  e.target.value
-                                )
-                              }
-                              disabled={!isCreating && !isEditMode}
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Загрузка документа ИК */}
-                        <div className="mt-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            ИК ҳужжати (max 4 MB)
-                          </label>
-                          <input
-                            type="file"
-                            onChange={(e) =>
-                              handleFileUpload(
-                                "ikDocumentUrl",
-                                e.target.files[0],
-                                4
-                              )
-                            }
-                            disabled={!isCreating && !isEditMode}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
 
                   {/* Индикатор */}
                   {(isCreating || isEditMode) && (
