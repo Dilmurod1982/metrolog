@@ -27,7 +27,7 @@ const Login = () => {
     const result = await signIn(formData.email, formData.password);
 
     if (result.success) {
-      toast.success("Успешный вход в систему");
+      toast.success("Тизимга муваффақиятли кирдингиз!");
       // НЕ НУЖНА НАВИГАЦИЯ! App.jsx сам перенаправит
     } else {
       toast.error(result.error);

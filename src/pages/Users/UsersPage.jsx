@@ -1,5 +1,5 @@
 // src/pages/Users/UsersPage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   collection,
   getDocs,
@@ -29,6 +29,8 @@ import {
   Trash2,
   Eye,
   EyeOff,
+  MapPin,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLogger } from "../../hooks/useLogger";
@@ -40,12 +42,17 @@ const UsersPage = () => {
   const t = translations[language];
 
   const [users, setUsers] = useState([]);
+  const [regions, setRegions] = useState([]);
+  const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showRegionDropdown, setShowRegionDropdown] = useState(false);
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -58,6 +65,8 @@ const UsersPage = () => {
     position: "",
     isActive: true,
     accessEndDate: "",
+    selectedRegions: [],
+    selectedCities: [],
   });
   const [uniqueErrors, setUniqueErrors] = useState({
     email: "",
@@ -66,11 +75,11 @@ const UsersPage = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Проверяем, является ли текущий пользователь superadmin
   const isSuperAdmin = currentUserData?.role === "superadmin";
   const isAdmin = currentUserData?.role === "admin";
 
-  // Все роли
+  const rolesNeedingRegions = ["tummetrolog", "metrolog", "mexmon"];
+
   const allRoles = [
     {
       value: "superadmin",
@@ -91,19 +100,11 @@ const UsersPage = () => {
     { value: "mexmon", label: "Mexmon", color: "bg-gray-100 text-gray-800" },
   ];
 
-  // Роли, доступные для выбора (без superadmin для админа)
   const availableRoles = isSuperAdmin
     ? allRoles
     : allRoles.filter((role) => role.value !== "superadmin");
 
-  useEffect(() => {
-    fetchUsers();
-
-    // Логируем просмотр страницы
-    logView(MODULES.USERS, "Просмотр списка пользователей");
-  }, []);
-
-  const fetchUsers = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const usersRef = collection(db, "users");
@@ -113,12 +114,10 @@ const UsersPage = () => {
         ...doc.data(),
       }));
 
-      // Если текущий пользователь не superadmin, скрываем superadmin из списка
       if (!isSuperAdmin) {
         usersList = usersList.filter((user) => user.role !== "superadmin");
       }
 
-      // Сортируем по дате создания (новые сначала)
       usersList.sort((a, b) => {
         const dateA = a.createdAt?.seconds || 0;
         const dateB = b.createdAt?.seconds || 0;
@@ -126,32 +125,42 @@ const UsersPage = () => {
       });
 
       setUsers(usersList);
-    } catch (error) {
-      console.error("Error fetching users:", error);
 
-      // Логируем ошибку
+      const regionsSnap = await getDocs(collection(db, "regions"));
+      const regionsList = regionsSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setRegions(regionsList);
+
+      const citiesSnap = await getDocs(collection(db, "cities"));
+      const citiesList = citiesSnap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setCities(citiesList);
+    } catch (error) {
+      console.error("Error loading data:", error);
       await logError(
         MODULES.USERS,
-        `Ошибка загрузки пользователей: ${error.message}`
+        `Маълумотларни юклашда хатолик: ${error.message}`
       );
-
-      setErrorMessage(
-        language === "uz"
-          ? "Фойдаланувчиларни юклашда хатолик"
-          : "Ошибка загрузки пользователей"
-      );
+      toast.error("Маълумотларни юклашда хатолик");
     } finally {
       setLoading(false);
     }
-  };
+  }, [isSuperAdmin, logError]);
+
+  useEffect(() => {
+    loadData();
+    logView(MODULES.USERS, "Фойдаланувчилар рўйхатини кўриш");
+  }, [loadData, logView]);
 
   const checkUniqueEmail = async (email) => {
     if (!email) return "";
-
     const usersRef = collection(db, "users");
     const q = query(usersRef, where("email", "==", email));
     const querySnapshot = await getDocs(q);
-
     if (!querySnapshot.empty) {
       return language === "uz"
         ? "Бундай email аллақачон мавжуд"
@@ -163,10 +172,76 @@ const UsersPage = () => {
   const handleInputChange = async (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-    if (field === "email") {
+    if (field === "email" && isCreating) {
       const error = await checkUniqueEmail(value);
       setUniqueErrors((prev) => ({ ...prev, email: error }));
     }
+
+    if (field === "role" && !rolesNeedingRegions.includes(value)) {
+      setFormData((prev) => ({
+        ...prev,
+        selectedRegions: [],
+        selectedCities: [],
+      }));
+    }
+  };
+
+  const toggleRegion = (regionId) => {
+    setFormData((prev) => {
+      const isSelected = prev.selectedRegions.includes(regionId);
+      const newRegions = isSelected
+        ? prev.selectedRegions.filter((id) => id !== regionId)
+        : [...prev.selectedRegions, regionId];
+
+      const citiesToRemove = cities
+        .filter((city) => city.regionId === regionId)
+        .map((city) => city.id);
+      const newCities = prev.selectedCities.filter(
+        (cityId) => !citiesToRemove.includes(cityId)
+      );
+
+      return {
+        ...prev,
+        selectedRegions: newRegions,
+        selectedCities: newCities,
+      };
+    });
+  };
+
+  const toggleCity = (cityId) => {
+    setFormData((prev) => {
+      const isSelected = prev.selectedCities.includes(cityId);
+      return {
+        ...prev,
+        selectedCities: isSelected
+          ? prev.selectedCities.filter((id) => id !== cityId)
+          : [...prev.selectedCities, cityId],
+      };
+    });
+  };
+
+  const toggleAllCitiesInRegion = (regionId) => {
+    const citiesInRegion = cities.filter((city) => city.regionId === regionId);
+    const allCityIds = citiesInRegion.map((city) => city.id);
+    const allSelected = allCityIds.every((id) =>
+      formData.selectedCities.includes(id)
+    );
+
+    setFormData((prev) => {
+      if (allSelected) {
+        return {
+          ...prev,
+          selectedCities: prev.selectedCities.filter(
+            (id) => !allCityIds.includes(id)
+          ),
+        };
+      } else {
+        return {
+          ...prev,
+          selectedCities: [...new Set([...prev.selectedCities, ...allCityIds])],
+        };
+      }
+    });
   };
 
   const validateForm = () => {
@@ -176,7 +251,7 @@ const UsersPage = () => {
       lastName: formData.lastName.trim() !== "",
     };
 
-    if (!isEditMode) {
+    if (isCreating) {
       requiredFields.password = formData.password.length >= 6;
     }
 
@@ -195,23 +270,16 @@ const UsersPage = () => {
       return;
     }
 
-    // Проверяем, не пытается ли админ создать superadmin
     if (!isSuperAdmin && formData.role === "superadmin") {
       const errorMsg =
         language === "uz"
           ? "Сиз суперадмин яратиш ҳуқуқига эга эмассиз"
           : "У вас нет прав для создания суперадмина";
-
       setErrorMessage(errorMsg);
-
-      // Логируем попытку несанкционированного доступа
       await logError(
         MODULES.USERS,
-        `Попытка создания superadmin пользователем без прав: ${currentUserData?.email}`,
-        null,
-        { attemptedRole: "superadmin" }
+        `Попытка создания superadmin: ${currentUserData?.email}`
       );
-
       return;
     }
 
@@ -220,17 +288,19 @@ const UsersPage = () => {
     setSuccessMessage("");
 
     try {
-      if (isEditMode) {
-        // Проверяем права при редактировании
-        if (!isSuperAdmin && selectedUser?.role === "superadmin") {
-          throw new Error("Нет прав для редактирования суперадмина");
-        }
-
-        if (!isSuperAdmin && formData.role === "superadmin") {
-          throw new Error("Нет прав для назначения роли суперадмина");
-        }
-
-        // Обновление существующего пользователя
+      if (isCreating) {
+        const result = await createUserViaREST(formData);
+        await logCreate(
+          MODULES.USERS,
+          `Фойдаланувчи яратилди: ${formData.firstName} ${formData.lastName}`,
+          result.uid
+        );
+        setSuccessMessage(
+          language === "uz"
+            ? "Фойдаланувчи муваффақиятли яратилди"
+            : "Пользователь успешно создан"
+        );
+      } else {
         const userRef = doc(db, "users", selectedUser.id);
         await updateDoc(userRef, {
           firstName: formData.firstName,
@@ -242,67 +312,40 @@ const UsersPage = () => {
           position: formData.position,
           isActive: formData.isActive,
           accessEndDate: formData.accessEndDate,
+          selectedRegions: formData.selectedRegions,
+          selectedCities: formData.selectedCities,
           updatedAt: new Date(),
         });
-
-        // Логируем обновление
         await logUpdate(
           MODULES.USERS,
-          `Обновлен пользователь: ${formData.firstName} ${formData.lastName} (${formData.email})`,
-          selectedUser.id,
-          { email: formData.email, role: formData.role }
+          `Фойдаланувчи янгиланди: ${formData.firstName} ${formData.lastName}`,
+          selectedUser.id
         );
-
         setSuccessMessage(
           language === "uz"
             ? "Фойдаланувчи муваффақиятли янгиланди"
             : "Пользователь успешно обновлен"
         );
-      } else {
-        // Создание пользователя через REST API
-        const result = await createUserViaREST(formData);
-
-        // Логируем создание
-        await logCreate(
-          MODULES.USERS,
-          `Создан пользователь: ${formData.firstName} ${formData.lastName} (${formData.email})`,
-          result.uid,
-          { email: formData.email, role: formData.role }
-        );
-
-        setSuccessMessage(
-          language === "uz"
-            ? "Фойдаланувчи муваффақиятли яратилди"
-            : "Пользователь успешно создан"
-        );
       }
 
-      // Закрываем модальное окно и обновляем список
       setTimeout(() => {
         handleCloseModal();
-        fetchUsers();
+        loadData();
       }, 1000);
     } catch (error) {
       console.error("Error saving user:", error);
-
-      // Логируем ошибку
       await logError(
         MODULES.USERS,
-        `Ошибка при сохранении пользователя: ${error.message}`,
-        null,
-        { email: formData.email, role: formData.role }
+        `Фойдаланувчи сақлашда хатолик: ${error.message}`
       );
-
       let errorMsg =
         language === "uz" ? "Сақлашда хатолик" : "Ошибка при сохранении";
-
       if (error.message?.includes("EMAIL_EXISTS")) {
         errorMsg =
           language === "uz"
             ? "Бундай email аллақачон рўйхатдан ўтган"
             : "Такой email уже зарегистрирован";
       }
-
       setErrorMessage(errorMsg);
     } finally {
       setSaving(false);
@@ -311,23 +354,16 @@ const UsersPage = () => {
 
   const createUserViaREST = async (userData) => {
     try {
-      // Получаем API ключ из .env
       const apiKey =
         import.meta.env.VITE_FIREBASE_API_KEY ||
         "AIzaSyCPwDtyIpbsLd1xxN8jUuAe-f171JoCeOs";
+      if (!apiKey) throw new Error("API key not found");
 
-      if (!apiKey) {
-        throw new Error("API key not found");
-      }
-
-      // 1. Создаем пользователя через Firebase Auth REST API
       const response = await fetch(
         `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email: userData.email,
             password: userData.password,
@@ -337,12 +373,9 @@ const UsersPage = () => {
       );
 
       const data = await response.json();
-
-      if (!response.ok) {
+      if (!response.ok)
         throw new Error(data.error?.message || "Ошибка создания пользователя");
-      }
 
-      // 2. Сохраняем данные пользователя в Firestore
       const userDoc = {
         uid: data.localId,
         email: userData.email,
@@ -355,12 +388,13 @@ const UsersPage = () => {
         position: userData.position || "",
         isActive: userData.isActive !== false,
         accessEndDate: userData.accessEndDate || "",
+        selectedRegions: userData.selectedRegions || [],
+        selectedCities: userData.selectedCities || [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
       await addDoc(collection(db, "users"), userDoc);
-
       return { success: true, uid: data.localId };
     } catch (error) {
       console.error("Error in createUserViaREST:", error);
@@ -368,8 +402,8 @@ const UsersPage = () => {
     }
   };
 
+  // Открытие модального окна для ПРОСМОТРА пользователя
   const handleUserClick = (user) => {
-    // Проверяем права на редактирование
     if (!isSuperAdmin && user.role === "superadmin") {
       toast.error(
         language === "uz"
@@ -392,11 +426,15 @@ const UsersPage = () => {
       position: user.position || "",
       isActive: user.isActive !== false,
       accessEndDate: user.accessEndDate || "",
+      selectedRegions: user.selectedRegions || [],
+      selectedCities: user.selectedCities || [],
     });
-    setIsEditMode(true);
+    setIsCreating(false);
+    setIsEditMode(false); // ВАЖНО: режим просмотра
     setIsModalOpen(true);
   };
 
+  // Открытие модального окна для СОЗДАНИЯ
   const handleCreateNew = () => {
     setSelectedUser(null);
     setFormData({
@@ -406,15 +444,54 @@ const UsersPage = () => {
       lastName: "",
       middleName: "",
       phone: "",
-      role: "metrolog", // По умолчанию metrolog для админа
+      role: "metrolog",
       organization: "",
       position: "",
       isActive: true,
       accessEndDate: "",
+      selectedRegions: [],
+      selectedCities: [],
     });
     setUniqueErrors({ email: "" });
+    setIsCreating(true);
     setIsEditMode(false);
     setIsModalOpen(true);
+  };
+
+  // Переключение в режим редактирования
+  const handleEdit = () => {
+    setIsEditMode(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+  };
+
+  // Отмена редактирования
+  const handleCancel = () => {
+    if (isCreating) {
+      handleCloseModal();
+    } else {
+      setIsEditMode(false);
+      const originalUser = users.find((u) => u.id === selectedUser.id);
+      if (originalUser) {
+        setFormData({
+          email: originalUser.email || "",
+          password: "",
+          firstName: originalUser.firstName || "",
+          lastName: originalUser.lastName || "",
+          middleName: originalUser.middleName || "",
+          phone: originalUser.phone || "",
+          role: originalUser.role || "metrolog",
+          organization: originalUser.organization || "",
+          position: originalUser.position || "",
+          isActive: originalUser.isActive !== false,
+          accessEndDate: originalUser.accessEndDate || "",
+          selectedRegions: originalUser.selectedRegions || [],
+          selectedCities: originalUser.selectedCities || [],
+        });
+      }
+      setErrorMessage("");
+      setSuccessMessage("");
+    }
   };
 
   const handleCloseModal = () => {
@@ -423,6 +500,10 @@ const UsersPage = () => {
     setErrorMessage("");
     setSuccessMessage("");
     setShowPassword(false);
+    setShowRegionDropdown(false);
+    setShowCityDropdown(false);
+    setIsEditMode(false);
+    setIsCreating(false);
   };
 
   const getRoleLabel = (role) => {
@@ -435,6 +516,20 @@ const UsersPage = () => {
     return roleObj ? roleObj.color : "bg-gray-100 text-gray-800";
   };
 
+  const getSelectedRegionNames = () => {
+    return formData.selectedRegions
+      .map((id) => regions.find((r) => r.id === id)?.name)
+      .filter(Boolean)
+      .join(", ");
+  };
+
+  const getSelectedCityNames = () => {
+    return formData.selectedCities
+      .map((id) => cities.find((c) => c.id === id)?.name)
+      .filter(Boolean)
+      .join(", ");
+  };
+
   const filteredUsers = users.filter(
     (user) =>
       user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -442,6 +537,9 @@ const UsersPage = () => {
       user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.role?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const needsRegionSelection = rolesNeedingRegions.includes(formData.role);
+  const isViewMode = !isCreating && !isEditMode; // Режим просмотра
 
   if (loading) {
     return (
@@ -457,7 +555,7 @@ const UsersPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 lg:p-8">
-      {/* Заголовок и кнопка добавления */}
+      {/* Заголовок */}
       <motion.div
         className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8"
         initial={{ opacity: 0, y: -20 }}
@@ -527,13 +625,10 @@ const UsersPage = () => {
                   {language === "uz" ? "Рол" : "Роль"}
                 </th>
                 <th className="px-4 py-4 text-left font-semibold hidden lg:table-cell">
-                  {language === "uz" ? "Ташкилот" : "Организация"}
+                  {language === "uz" ? "Ҳудудлар" : "Регионы"}
                 </th>
                 <th className="px-4 py-4 text-left font-semibold hidden xl:table-cell">
                   {language === "uz" ? "Ҳолат" : "Статус"}
-                </th>
-                <th className="px-4 py-4 text-left font-semibold hidden lg:table-cell">
-                  {language === "uz" ? "Яратилган" : "Создан"}
                 </th>
               </tr>
             </thead>
@@ -580,11 +675,15 @@ const UsersPage = () => {
                     </span>
                   </td>
                   <td className="px-4 py-4 hidden lg:table-cell">
-                    <div className="flex items-center gap-2">
-                      <Building className="text-indigo-500" size={16} />
-                      <span className="text-gray-600">
-                        {user.organization || "-"}
-                      </span>
+                    <div className="text-sm text-gray-600">
+                      {user.selectedRegions?.length > 0 ? (
+                        <span>
+                          {user.selectedRegions.length} та вилоят,{" "}
+                          {user.selectedCities?.length || 0} та шаҳар/туман
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-4 hidden xl:table-cell">
@@ -602,13 +701,6 @@ const UsersPage = () => {
                       )}
                       {user.isActive !== false ? "Active" : "Inactive"}
                     </span>
-                  </td>
-                  <td className="px-4 py-4 hidden lg:table-cell text-gray-500">
-                    {user.createdAt
-                      ? new Date(
-                          user.createdAt.seconds * 1000
-                        ).toLocaleDateString("ru-RU")
-                      : "-"}
                   </td>
                 </motion.tr>
               ))}
@@ -633,16 +725,6 @@ const UsersPage = () => {
                 ? "Фойдаланувчилар қўшилмаган"
                 : "Пользователи не добавлены"}
             </h3>
-            {!searchTerm && (
-              <button
-                onClick={handleCreateNew}
-                className="bg-indigo-500 text-white px-6 py-2 rounded-lg hover:bg-indigo-600 transition-colors"
-              >
-                {language === "uz"
-                  ? "Фойдаланувчи қўшиш"
-                  : "Добавить пользователя"}
-              </button>
-            )}
           </motion.div>
         )}
       </motion.div>
@@ -665,17 +747,21 @@ const UsersPage = () => {
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Заголовок модального окна */}
+              {/* Заголовок */}
               <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-6">
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-bold">
-                    {isEditMode
+                    {isCreating
+                      ? language === "uz"
+                        ? "Янги фойдаланувчи яратиш"
+                        : "Создание нового пользователя"
+                      : isEditMode
                       ? language === "uz"
                         ? "Фойдаланувчини таҳрирлаш"
                         : "Редактирование пользователя"
                       : language === "uz"
-                      ? "Янги фойдаланувчи яратиш"
-                      : "Создание нового пользователя"}
+                      ? "Фойдаланувчи ҳақида маълумот"
+                      : "Информация о пользователе"}
                   </h2>
                   <motion.button
                     onClick={handleCloseModal}
@@ -688,7 +774,6 @@ const UsersPage = () => {
                 </div>
               </div>
 
-              {/* Форма */}
               <form onSubmit={handleSubmit}>
                 <div className="p-6 max-h-[60vh] overflow-y-auto">
                   {errorMessage && (
@@ -697,7 +782,6 @@ const UsersPage = () => {
                       <span>{errorMessage}</span>
                     </div>
                   )}
-
                   {successMessage && (
                     <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700">
                       <CheckCircle size={20} />
@@ -709,8 +793,7 @@ const UsersPage = () => {
                     {/* Email */}
                     <div>
                       <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                        <Mail size={16} />
-                        Email *
+                        <Mail size={16} /> Email *
                       </label>
                       <input
                         type="email"
@@ -718,7 +801,7 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("email", e.target.value)
                         }
-                        disabled={isEditMode}
+                        disabled={!isCreating}
                         className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500 ${
                           uniqueErrors.email
                             ? "border-red-300"
@@ -735,10 +818,10 @@ const UsersPage = () => {
                     </div>
 
                     {/* Пароль */}
-                    {!isEditMode && (
+                    {isCreating && (
                       <div>
                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                          <Eye size={16} />
+                          <Eye size={16} />{" "}
                           {language === "uz" ? "Парол" : "Пароль"} *
                         </label>
                         <div className="relative">
@@ -778,7 +861,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("firstName", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                         required
                       />
                     </div>
@@ -794,7 +878,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("lastName", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                         required
                       />
                     </div>
@@ -810,7 +895,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("middleName", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                       />
                     </div>
 
@@ -825,7 +911,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("phone", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                         placeholder="+998 XX XXX XX XX"
                       />
                     </div>
@@ -833,7 +920,7 @@ const UsersPage = () => {
                     {/* Роль */}
                     <div>
                       <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                        <Shield size={16} />
+                        <Shield size={16} />{" "}
                         {language === "uz" ? "Рол" : "Роль"} *
                       </label>
                       <select
@@ -841,7 +928,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("role", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                         required
                       >
                         {availableRoles.map((role) => (
@@ -855,7 +943,7 @@ const UsersPage = () => {
                     {/* Организация */}
                     <div>
                       <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                        <Building size={16} />
+                        <Building size={16} />{" "}
                         {language === "uz" ? "Ташкилот" : "Организация"}
                       </label>
                       <input
@@ -864,7 +952,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("organization", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                       />
                     </div>
 
@@ -879,7 +968,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("position", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                       />
                     </div>
 
@@ -896,7 +986,8 @@ const UsersPage = () => {
                         onChange={(e) =>
                           handleInputChange("accessEndDate", e.target.value)
                         }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                        disabled={isViewMode}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-50 disabled:text-gray-500"
                       />
                     </div>
 
@@ -908,77 +999,322 @@ const UsersPage = () => {
                       <div className="flex items-center gap-4">
                         <button
                           type="button"
-                          onClick={() => handleInputChange("isActive", true)}
+                          onClick={() =>
+                            !isViewMode && handleInputChange("isActive", true)
+                          }
                           className={`px-4 py-2 rounded-lg transition-all ${
                             formData.isActive
                               ? "bg-green-100 text-green-800 border-2 border-green-500"
                               : "bg-gray-100 text-gray-500 border-2 border-transparent"
-                          }`}
+                          } ${isViewMode ? "cursor-not-allowed" : ""}`}
                         >
                           Active
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleInputChange("isActive", false)}
+                          onClick={() =>
+                            !isViewMode && handleInputChange("isActive", false)
+                          }
                           className={`px-4 py-2 rounded-lg transition-all ${
                             !formData.isActive
                               ? "bg-red-100 text-red-800 border-2 border-red-500"
                               : "bg-gray-100 text-gray-500 border-2 border-transparent"
-                          }`}
+                          } ${isViewMode ? "cursor-not-allowed" : ""}`}
                         >
                           Inactive
                         </button>
                       </div>
                     </div>
                   </div>
+
+                  {/* Выбор регионов */}
+                  {needsRegionSelection && (isCreating || isEditMode) && (
+                    <div className="mt-6 border-t pt-6">
+                      <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-4">
+                        <MapPin size={18} />
+                        {language === "uz"
+                          ? "Ҳудудларни танлаш"
+                          : "Выбор регионов"}
+                      </h3>
+
+                      {/* Выпадающий список регионов */}
+                      <div className="relative mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {language === "uz" ? "Вилоятлар" : "Области"}
+                        </label>
+                        <div
+                          onClick={() =>
+                            setShowRegionDropdown(!showRegionDropdown)
+                          }
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl cursor-pointer flex items-center justify-between hover:border-indigo-300 transition-all bg-white"
+                        >
+                          <span
+                            className={
+                              formData.selectedRegions.length > 0
+                                ? "text-gray-800 text-sm"
+                                : "text-gray-400 text-sm"
+                            }
+                          >
+                            {formData.selectedRegions.length > 0
+                              ? `${formData.selectedRegions.length} та вилоят танланган`
+                              : "Вилоятларни танланг..."}
+                          </span>
+                          <ChevronDown
+                            size={18}
+                            className={`text-gray-400 transition-transform ${
+                              showRegionDropdown ? "rotate-180" : ""
+                            }`}
+                          />
+                        </div>
+
+                        {showRegionDropdown && (
+                          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                            {regions.map((region) => (
+                              <label
+                                key={region.id}
+                                className="flex items-center gap-3 px-4 py-3 hover:bg-indigo-50 cursor-pointer border-b last:border-b-0"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={formData.selectedRegions.includes(
+                                    region.id
+                                  )}
+                                  onChange={() => toggleRegion(region.id)}
+                                  className="w-4 h-4 text-indigo-600 rounded"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  {region.name}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Выпадающий список городов */}
+                      {formData.selectedRegions.length > 0 && (
+                        <div className="relative">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {language === "uz"
+                              ? "Туман/Шаҳарлар"
+                              : "Города/Районы"}
+                          </label>
+                          <div
+                            onClick={() =>
+                              setShowCityDropdown(!showCityDropdown)
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl cursor-pointer flex items-center justify-between hover:border-indigo-300 transition-all bg-white"
+                          >
+                            <span
+                              className={
+                                formData.selectedCities.length > 0
+                                  ? "text-gray-800 text-sm"
+                                  : "text-gray-400 text-sm"
+                              }
+                            >
+                              {formData.selectedCities.length > 0
+                                ? `${formData.selectedCities.length} та шаҳар/туман танланган`
+                                : "Шаҳар/туманларни танланг..."}
+                            </span>
+                            <ChevronDown
+                              size={18}
+                              className={`text-gray-400 transition-transform ${
+                                showCityDropdown ? "rotate-180" : ""
+                              }`}
+                            />
+                          </div>
+
+                          {showCityDropdown && (
+                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                              {regions
+                                .filter((region) =>
+                                  formData.selectedRegions.includes(region.id)
+                                )
+                                .map((region) => {
+                                  const regionCities = cities.filter(
+                                    (city) => city.regionId === region.id
+                                  );
+                                  if (regionCities.length === 0) return null;
+
+                                  const allSelected = regionCities.every(
+                                    (city) =>
+                                      formData.selectedCities.includes(city.id)
+                                  );
+
+                                  return (
+                                    <div key={region.id}>
+                                      <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between">
+                                        <span className="text-sm font-semibold text-gray-700">
+                                          {region.name}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            toggleAllCitiesInRegion(region.id)
+                                          }
+                                          className="text-xs text-indigo-600 hover:text-indigo-800"
+                                        >
+                                          {allSelected
+                                            ? "Барчасини олиб ташлаш"
+                                            : "Барчасини танлаш"}
+                                        </button>
+                                      </div>
+                                      {regionCities.map((city) => (
+                                        <label
+                                          key={city.id}
+                                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50 cursor-pointer border-b last:border-b-0"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={formData.selectedCities.includes(
+                                              city.id
+                                            )}
+                                            onChange={() => toggleCity(city.id)}
+                                            className="w-4 h-4 text-indigo-600 rounded ml-4"
+                                          />
+                                          <span className="text-sm text-gray-700">
+                                            {city.name}
+                                          </span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Отображение выбранных */}
+                      {(formData.selectedRegions.length > 0 ||
+                        formData.selectedCities.length > 0) && (
+                        <div className="mt-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                          <p className="text-sm font-medium text-indigo-700 mb-2">
+                            Танланган ҳудудлар:
+                          </p>
+                          {formData.selectedRegions.length > 0 && (
+                            <p className="text-xs text-indigo-600">
+                              <b>Вилоятлар:</b> {getSelectedRegionNames()}
+                            </p>
+                          )}
+                          {formData.selectedCities.length > 0 && (
+                            <p className="text-xs text-indigo-600 mt-1">
+                              <b>Шаҳар/туманлар:</b> {getSelectedCityNames()}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Отображение регионов в режиме просмотра */}
+                  {needsRegionSelection && isViewMode && (
+                    <div className="mt-6 border-t pt-6">
+                      <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800 mb-4">
+                        <MapPin size={18} />
+                        {language === "uz" ? "Ҳудудлар" : "Регионы"}
+                      </h3>
+                      {formData.selectedRegions.length > 0 ||
+                      formData.selectedCities.length > 0 ? (
+                        <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                          {formData.selectedRegions.length > 0 && (
+                            <p className="text-sm text-gray-700">
+                              <b>Вилоятлар:</b> {getSelectedRegionNames()}
+                            </p>
+                          )}
+                          {formData.selectedCities.length > 0 && (
+                            <p className="text-sm text-gray-700 mt-1">
+                              <b>Шаҳар/туманлар:</b> {getSelectedCityNames()}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-400">
+                          Ҳудудлар танланмаган
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Кнопки */}
                 <div className="border-t px-6 py-4 bg-gray-50">
                   <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
-                    <motion.button
-                      type="button"
-                      onClick={handleCloseModal}
-                      className="w-full sm:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-100 transition-colors"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      {language === "uz" ? "Бекор" : "Отмена"}
-                    </motion.button>
+                    {/* Режим просмотра */}
+                    {isViewMode && (
+                      <>
+                        <motion.button
+                          type="button"
+                          onClick={handleCloseModal}
+                          className="w-full sm:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-100 transition-colors"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          {language === "uz" ? "Ёпиш" : "Закрыть"}
+                        </motion.button>
 
-                    <motion.button
-                      type="submit"
-                      disabled={saving || !validateForm()}
-                      className={`w-full sm:w-auto px-6 py-3 rounded-xl font-semibold transition-colors flex items-center gap-2 justify-center ${
-                        saving || !validateForm()
-                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                          : "bg-indigo-500 text-white hover:bg-indigo-600 cursor-pointer"
-                      }`}
-                      whileHover={!saving ? { scale: 1.02 } : {}}
-                      whileTap={!saving ? { scale: 0.98 } : {}}
-                    >
-                      {saving ? (
-                        <>
-                          <motion.div
-                            className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
-                            animate={{ rotate: 360 }}
-                            transition={{
-                              duration: 1,
-                              repeat: Infinity,
-                              ease: "linear",
-                            }}
-                          />
-                          {language === "uz"
-                            ? "Сақланмоқда..."
-                            : "Сохранение..."}
-                        </>
-                      ) : (
-                        <>
-                          <Save size={16} />
-                          {language === "uz" ? "Сақлаш" : "Сохранить"}
-                        </>
-                      )}
-                    </motion.button>
+                        <motion.button
+                          type="button"
+                          onClick={handleEdit}
+                          className="w-full sm:w-auto bg-indigo-500 text-white px-6 py-3 rounded-xl font-semibold hover:bg-indigo-600 transition-colors flex items-center gap-2 justify-center"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <Edit size={16} />
+                          {language === "uz" ? "Таҳрирлаш" : "Редактировать"}
+                        </motion.button>
+                      </>
+                    )}
+
+                    {/* Режим создания или редактирования */}
+                    {(isCreating || isEditMode) && (
+                      <>
+                        <motion.button
+                          type="button"
+                          onClick={handleCancel}
+                          disabled={saving}
+                          className="w-full sm:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-100 transition-colors"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          {language === "uz" ? "Бекор" : "Отмена"}
+                        </motion.button>
+
+                        <motion.button
+                          type="submit"
+                          disabled={saving || !validateForm()}
+                          className={`w-full sm:w-auto px-6 py-3 rounded-xl font-semibold transition-colors flex items-center gap-2 justify-center ${
+                            saving || !validateForm()
+                              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                              : "bg-green-500 text-white hover:bg-green-600 cursor-pointer"
+                          }`}
+                          whileHover={!saving ? { scale: 1.02 } : {}}
+                          whileTap={!saving ? { scale: 0.98 } : {}}
+                        >
+                          {saving ? (
+                            <>
+                              <motion.div
+                                className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                                animate={{ rotate: 360 }}
+                                transition={{
+                                  duration: 1,
+                                  repeat: Infinity,
+                                  ease: "linear",
+                                }}
+                              />
+                              {language === "uz"
+                                ? "Сақланмоқда..."
+                                : "Сохранение..."}
+                            </>
+                          ) : (
+                            <>
+                              <Save size={16} />
+                              {language === "uz" ? "Сақлаш" : "Сохранить"}
+                            </>
+                          )}
+                        </motion.button>
+                      </>
+                    )}
                   </div>
                 </div>
               </form>
