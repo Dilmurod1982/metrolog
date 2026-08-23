@@ -1,7 +1,7 @@
 // src/pages/Documents/DocumentsByType.jsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { collection, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { motion } from "framer-motion";
 import {
@@ -16,13 +16,21 @@ import { useLogger } from "../../hooks/useLogger";
 import { MODULES } from "../../services/logger";
 
 const DocumentsByType = () => {
-  const { language } = useAppStore();
+  const { language, userData } = useAppStore();
   const { logError } = useLogger();
+  const navigate = useNavigate();
 
   const [documentTypes, setDocumentTypes] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const rolesWithCityFilter = ["tummetrolog", "metrolog", "mexmon"];
+  const needsCityFilter = rolesWithCityFilter.includes(userData?.role);
+
+  const userCityIds = useMemo(() => {
+    return userData?.selectedCities || [];
+  }, [userData?.selectedCities]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -44,13 +52,83 @@ const DocumentsByType = () => {
         ...doc.data(),
       }));
 
-      // Подсчет статистики
-      const counts = {};
+      // Загрузка объектов для фильтрации по городам
+      const objectsSnap = await getDocs(collection(db, "objects"));
+      const objectsData = {};
+      objectsSnap.forEach((doc) => {
+        objectsData[doc.id] = { ...doc.data(), id: doc.id };
+      });
+
+      // Фильтруем документы по городам пользователя
+      let filteredDocs = docsData;
+      if (needsCityFilter) {
+        if (userCityIds.length > 0) {
+          filteredDocs = docsData.filter((doc) => {
+            const objectInfo = objectsData[doc.objectId];
+            return (
+              objectInfo &&
+              objectInfo.cityId &&
+              userCityIds.includes(objectInfo.cityId)
+            );
+          });
+        } else {
+          filteredDocs = [];
+        }
+      }
+
+      // Получаем только последние документы для каждого объекта
+      const latestDocsMap = {};
       const now = new Date();
 
-      docsData.forEach((docData) => {
-        const docType = docData.docType;
-        const expiry = docData.expiryDate ? new Date(docData.expiryDate) : null;
+      filteredDocs.forEach((doc) => {
+        const key = doc.objectId;
+        if (!key) return;
+
+        const expiry = doc.expiryDate ? new Date(doc.expiryDate) : null;
+        const issue = doc.issueDate ? new Date(doc.issueDate) : null;
+
+        if (!latestDocsMap[key]) {
+          latestDocsMap[key] = { ...doc, expiryRaw: expiry, issueRaw: issue };
+        } else {
+          const currentExpiry = expiry;
+          const existingExpiry = latestDocsMap[key].expiryRaw;
+
+          if (currentExpiry === null) {
+            if (existingExpiry === null) {
+              if (
+                issue &&
+                latestDocsMap[key].issueRaw &&
+                issue > latestDocsMap[key].issueRaw
+              ) {
+                latestDocsMap[key] = {
+                  ...doc,
+                  expiryRaw: expiry,
+                  issueRaw: issue,
+                };
+              }
+            } else {
+              latestDocsMap[key] = {
+                ...doc,
+                expiryRaw: expiry,
+                issueRaw: issue,
+              };
+            }
+          } else if (existingExpiry === null) {
+            // Оставляем существующий без срока
+          } else if (currentExpiry > existingExpiry) {
+            latestDocsMap[key] = { ...doc, expiryRaw: expiry, issueRaw: issue };
+          }
+        }
+      });
+
+      const latestDocs = Object.values(latestDocsMap);
+
+      // Подсчет статистики по типам документов
+      const counts = {};
+
+      latestDocs.forEach((doc) => {
+        const docType = doc.docType;
+        const expiry = doc.expiryRaw;
         const diffDays = expiry
           ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))
           : Infinity;
@@ -68,7 +146,7 @@ const DocumentsByType = () => {
 
         counts[docType].total++;
 
-        if (expiry === null) {
+        if (expiry === null || diffDays === Infinity) {
           counts[docType].infinity++;
           return;
         }
@@ -89,7 +167,7 @@ const DocumentsByType = () => {
     } finally {
       setLoading(false);
     }
-  }, [logError]);
+  }, [logError, needsCityFilter, userCityIds]);
 
   useEffect(() => {
     loadData();
@@ -100,6 +178,10 @@ const DocumentsByType = () => {
       type.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       type.path?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleTypeClick = (typeId) => {
+    navigate(`/type-documents/${typeId}`);
+  };
 
   if (loading) {
     return (
@@ -115,11 +197,23 @@ const DocumentsByType = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 to-purple-100 p-4 lg:p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-2">
-          Ҳужжат тури бўйича
-        </h1>
-        <p className="text-gray-600">Ҳужжат турлари бўйича статистика</p>
+      <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-2">
+            Ҳужжат тури бўйича
+          </h1>
+          <p className="text-gray-600">Ҳужжат турлари бўйича статистика</p>
+        </div>
+
+        {needsCityFilter && (
+          <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+            <span className="font-medium">ℹ️ </span>
+            Сизга бириктирилган ҳудудлар бўйича ҳужжатлар кўрсатилмоқда
+            {userCityIds.length > 0 && (
+              <span> ({userCityIds.length} та шаҳар/туман)</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Поиск */}
@@ -159,7 +253,8 @@ const DocumentsByType = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: index * 0.05 }}
               whileHover={{ scale: 1.02 }}
-              className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow p-5"
+              onClick={() => handleTypeClick(type.firebaseId || type.id)}
+              className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all cursor-pointer p-5 group"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -229,14 +324,9 @@ const DocumentsByType = () => {
                 )}
               </div>
 
-              {s.total > 0 && (
-                <Link
-                  to={`/type-documents/${type.firebaseId}`}
-                  className="mt-3 block text-center py-2 bg-violet-50 text-violet-600 rounded-lg hover:bg-violet-100 transition-colors text-sm font-medium"
-                >
-                  Ҳужжатларни кўриш
-                </Link>
-              )}
+              <div className="mt-3 text-center py-2 bg-violet-50 text-violet-600 rounded-lg group-hover:bg-violet-100 transition-colors text-sm font-medium">
+                Ҳужжатларни кўриш
+              </div>
             </motion.div>
           );
         })}

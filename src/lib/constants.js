@@ -88,7 +88,7 @@ export const MENU_ITEMS = {
     { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
   ],
   mexmon: [
-    { path: "/home", label: "Асосий", icon: "Home" },
+    { path: "/home-mexmon", label: "Асосий", icon: "Home" },
     { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
   ]
 };
