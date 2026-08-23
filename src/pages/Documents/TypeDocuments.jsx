@@ -1,10 +1,11 @@
 // src/pages/Documents/TypeDocuments.jsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
 import { db, storage } from "../../firebase/config";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion, AnimatePresence } from "framer-motion";
+import * as XLSX from "xlsx";
 import {
   Download,
   ArrowLeft,
@@ -22,6 +23,7 @@ import {
   Building,
   ChevronDown,
   Filter,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useAppStore } from "../../lib/zustand";
 import { useLogger } from "../../hooks/useLogger";
@@ -76,10 +78,16 @@ const TypeDocuments = () => {
   const canAddDocuments =
     userData && (userData.role === "superadmin" || userData.role === "admin");
 
+  const rolesWithCityFilter = ["tummetrolog", "metrolog", "mexmon"];
+  const needsCityFilter = rolesWithCityFilter.includes(userData?.role);
+
+  const userCityIds = useMemo(() => {
+    return userData?.selectedCities || [];
+  }, [userData?.selectedCities]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Загрузка типа документа
       const typesSnap = await getDocs(collection(db, "document_types"));
       typesSnap.forEach((doc) => {
         const data = doc.data();
@@ -88,7 +96,6 @@ const TypeDocuments = () => {
         }
       });
 
-      // Загрузка типов объектов
       const objectTypesSnap = await getDocs(collection(db, "objectTypes"));
       const objectTypesData = {};
       const objectTypesArr = [];
@@ -100,7 +107,6 @@ const TypeDocuments = () => {
       setObjectTypesMap(objectTypesData);
       setObjectTypesList(objectTypesArr);
 
-      // Загрузка областей
       const regionsSnap = await getDocs(collection(db, "regions"));
       const regionsList = [];
       const regionsData = {};
@@ -112,7 +118,6 @@ const TypeDocuments = () => {
       setRegions(regionsList);
       setRegionsMap(regionsData);
 
-      // Загрузка городов
       const citiesSnap = await getDocs(collection(db, "cities"));
       const citiesList = [];
       citiesSnap.forEach((doc) => {
@@ -120,7 +125,6 @@ const TypeDocuments = () => {
       });
       setCities(citiesList);
 
-      // Загрузка организаций
       const orgsSnap = await getDocs(collection(db, "organizations"));
       const orgsData = {};
       orgsSnap.forEach((doc) => {
@@ -128,7 +132,6 @@ const TypeDocuments = () => {
       });
       setOrganizationsMap(orgsData);
 
-      // Загрузка объектов с обогащением данными организаций
       const objectsSnap = await getDocs(collection(db, "objects"));
       const objectsData = {};
       const objectsList = [];
@@ -147,6 +150,7 @@ const TypeDocuments = () => {
           inn: orgInfo.inn || "—",
           jshshir: orgInfo.jshshir || "—",
           regionName: data.regionName || regionInfo.name || "—",
+          regionId: data.regionId || null,
           objectTypeName: objectTypeName,
         };
 
@@ -156,12 +160,11 @@ const TypeDocuments = () => {
       setObjectsMap(objectsData);
       setObjects(objectsList);
 
-      // Загрузка документов
       const docsSnap = await getDocs(
         query(collection(db, "documents"), where("docType", "==", id))
       );
 
-      const docsData = docsSnap.docs.map((doc) => {
+      let docsData = docsSnap.docs.map((doc) => {
         const data = doc.data();
         const expiry = data.expiryDate ? new Date(data.expiryDate) : null;
         const issue = data.issueDate ? new Date(data.issueDate) : null;
@@ -182,7 +185,9 @@ const TypeDocuments = () => {
           jshshir: objectInfo.jshshir || "—",
           billingAccount: objectInfo.billingAccount || "—",
           regionName: objectInfo.regionName || "—",
+          regionId: objectInfo.regionId || null,
           cityName: objectInfo.cityName || "—",
+          cityId: objectInfo.cityId || null,
           objectTypeName: objectInfo.objectTypeName || "—",
           docNumber: data.docNumber,
           issueDate: issue ? issue.toLocaleDateString("ru-RU") : "—",
@@ -200,6 +205,16 @@ const TypeDocuments = () => {
         };
       });
 
+      if (needsCityFilter) {
+        if (userCityIds.length > 0) {
+          docsData = docsData.filter(
+            (doc) => doc.cityId && userCityIds.includes(doc.cityId)
+          );
+        } else {
+          docsData = [];
+        }
+      }
+
       setDocs(docsData);
     } catch (error) {
       console.error("Ошибка загрузки документов:", error);
@@ -211,7 +226,7 @@ const TypeDocuments = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, logError]);
+  }, [id, logError, needsCityFilter, userCityIds]);
 
   useEffect(() => {
     loadData();
@@ -221,7 +236,6 @@ const TypeDocuments = () => {
     applyFilters();
   }, [docs, filters, showLatestOnly]);
 
-  // При изменении региона фильтруем города
   useEffect(() => {
     if (filters.region === "Все") {
       setFilteredCities([]);
@@ -242,7 +256,6 @@ const TypeDocuments = () => {
   const applyFilters = () => {
     let filtered = [...docs];
 
-    // 1. Поиск
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       filtered = filtered.filter(
@@ -256,29 +269,24 @@ const TypeDocuments = () => {
       );
     }
 
-    // 2. Тип организации
     if (filters.orgType !== "Все") {
       filtered = filtered.filter((d) => d.organizationType === filters.orgType);
     }
 
-    // 3. Тип объекта
     if (filters.objectType !== "Все") {
       filtered = filtered.filter(
         (d) => d.objectTypeName === filters.objectType
       );
     }
 
-    // 4. Регион
     if (filters.region !== "Все") {
       filtered = filtered.filter((d) => d.regionName === filters.region);
     }
 
-    // 5. Город
     if (filters.city !== "Все") {
       filtered = filtered.filter((d) => d.cityName === filters.city);
     }
 
-    // 6. ВАЖНО: Сначала определяем последние документы
     if (showLatestOnly) {
       const latestDocsMap = {};
       filtered.forEach((d) => {
@@ -304,7 +312,6 @@ const TypeDocuments = () => {
               latestDocsMap[key] = d;
             }
           } else if (existingExpiry === null) {
-            // Оставляем существующий без срока
           } else if (currentExpiry > existingExpiry) {
             latestDocsMap[key] = d;
           }
@@ -313,7 +320,6 @@ const TypeDocuments = () => {
       filtered = Object.values(latestDocsMap);
     }
 
-    // 7. Только теперь применяем фильтр по сроку
     if (filters.expiry !== "Все") {
       filtered = filtered.filter((d) => {
         const days = d.diffDays;
@@ -325,7 +331,6 @@ const TypeDocuments = () => {
       });
     }
 
-    // 8. Сортировка
     filtered.sort((a, b) => {
       if (a.diffDays === Infinity && b.diffDays === Infinity) return 0;
       if (a.diffDays === Infinity) return 1;
@@ -334,6 +339,248 @@ const TypeDocuments = () => {
     });
 
     setFilteredDocs(filtered);
+  };
+
+  const filteredObjects = objects.filter((obj) => {
+    if (!objectSearchTerm.trim()) return true;
+    const searchLower = objectSearchTerm.toLowerCase();
+    return (
+      obj.objectName?.toLowerCase().includes(searchLower) ||
+      obj.organizationName?.toLowerCase().includes(searchLower) ||
+      obj.billingAccount?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const handleObjectSelect = (obj) => {
+    setFormData((prev) => ({
+      ...prev,
+      objectId: obj.id,
+      objectName: obj.objectName,
+    }));
+    setShowObjectDropdown(false);
+  };
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      toast.error("Файл ҳажми 10 МБ дан ошмаслиги керак");
+      return;
+    }
+    setFile(selectedFile);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!formData.objectId || !formData.docNumber || !formData.issueDate) {
+      toast.error("Барча мажбурий қаторларни тўлдиринг");
+      return;
+    }
+    if (!file) {
+      toast.error("Файлни танланг");
+      return;
+    }
+
+    setSaving(true);
+    const toastId = toast.loading("Ҳужжат сақланмоқда...");
+
+    try {
+      const storagePath = `documents/${id}/${Date.now()}_${file.name}`;
+      const fileRef = ref(storage, storagePath);
+      const snapshot = await uploadBytes(fileRef, file);
+      const fileUrl = await getDownloadURL(snapshot.ref);
+
+      const objectInfo = objectsMap[formData.objectId] || {};
+
+      const docData = {
+        docType: id,
+        docNumber: formData.docNumber,
+        issueDate: formData.issueDate,
+        expiryDate: formData.expiryDate || "",
+        objectId: formData.objectId,
+        objectName: objectInfo.objectName || formData.objectName,
+        organizationName: objectInfo.organizationName || "",
+        fileName: file.name,
+        fileUrl,
+        createdAt: new Date(),
+      };
+
+      const docRef = await addDoc(collection(db, "documents"), docData);
+
+      await logCreate(
+        MODULES.DOCUMENTS,
+        `Ҳужжат қўшилди: ${formData.docNumber}`,
+        docRef.id
+      );
+
+      toast.success("Ҳужжат муваффақиятли қўшилди", { id: toastId });
+      setRefreshTrigger((prev) => prev + 1);
+      handleCloseModal();
+    } catch (err) {
+      console.error("Ошибка при создании документа:", err);
+      await logError(
+        MODULES.DOCUMENTS,
+        `Ҳужжат яратишда хатолик: ${err.message}`
+      );
+      toast.error("Ҳужжат яратишда хатолик", { id: toastId });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportToExcel = () => {
+    if (filteredDocs.length === 0) {
+      toast.error("Экспорт қилиш учун ҳужжатлар мавжуд эмас");
+      return;
+    }
+
+    try {
+      const dataForExcel = filteredDocs.map((doc, index) => ({
+        "№": index + 1,
+        "Объект номи": doc.objectName,
+        "МЧЖ/ЯТТ номи": doc.organizationName,
+        "Ташкилот тури": doc.organizationType,
+        "ИНН/ЖШШИР": doc.organizationType === "МЧЖ" ? doc.inn : doc.jshshir,
+        "Лицевой счет": doc.billingAccount,
+        "Объект тури": doc.objectTypeName,
+        Вилоят: doc.regionName,
+        "Туман/Шаҳар": doc.cityName,
+        "Ҳужжат рақами": doc.docNumber,
+        "Берилган сана": doc.issueDate,
+        "Тугаш санаси": doc.expiryDate,
+        Ҳолат: doc.daysLeft,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+
+      worksheet["!cols"] = [
+        { wch: 5 },
+        { wch: 30 },
+        { wch: 30 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 25 },
+      ];
+
+      const range = XLSX.utils.decode_range(worksheet["!ref"]);
+
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_col(C) + "1";
+        if (!worksheet[address]) continue;
+        worksheet[address].s = {
+          font: { bold: true, color: { rgb: "FFFFFF" }, sz: 12 },
+          fill: { fgColor: { rgb: "7C3AED" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } },
+          },
+        };
+      }
+
+      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const address = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!worksheet[address]) continue;
+
+          worksheet[address].s = {
+            font: { sz: 11 },
+            alignment: {
+              horizontal: C === 0 ? "center" : "left",
+              vertical: "center",
+            },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } },
+            },
+          };
+
+          if (C === 12) {
+            const value = worksheet[address].v || "";
+            if (value.includes("Муддати ўтган")) {
+              worksheet[address].s.font.color = { rgb: "DC2626" };
+              worksheet[address].s.font.bold = true;
+              worksheet[address].s.fill = { fgColor: { rgb: "FEE2E2" } };
+            } else if (
+              value.includes("5 кун") ||
+              value.includes("4 кун") ||
+              value.includes("3 кун") ||
+              value.includes("2 кун") ||
+              value.includes("1 кун")
+            ) {
+              worksheet[address].s.font.color = { rgb: "D97706" };
+              worksheet[address].s.font.bold = true;
+              worksheet[address].s.fill = { fgColor: { rgb: "FEF3C7" } };
+            } else if (
+              value.includes("15 кун") ||
+              value.includes("14 кун") ||
+              value.includes("13 кун") ||
+              value.includes("12 кун") ||
+              value.includes("11 кун") ||
+              value.includes("10 кун") ||
+              value.includes("9 кун") ||
+              value.includes("8 кун") ||
+              value.includes("7 кун") ||
+              value.includes("6 кун")
+            ) {
+              worksheet[address].s.font.color = { rgb: "EA580C" };
+              worksheet[address].s.fill = { fgColor: { rgb: "FFEDD5" } };
+            } else if (
+              value.includes("30 кун") ||
+              value.includes("29 кун") ||
+              value.includes("28 кун") ||
+              value.includes("27 кун") ||
+              value.includes("26 кун") ||
+              value.includes("25 кун") ||
+              value.includes("24 кун") ||
+              value.includes("23 кун") ||
+              value.includes("22 кун") ||
+              value.includes("21 кун") ||
+              value.includes("20 кун") ||
+              value.includes("19 кун") ||
+              value.includes("18 кун") ||
+              value.includes("17 кун") ||
+              value.includes("16 кун")
+            ) {
+              worksheet[address].s.font.color = { rgb: "2563EB" };
+              worksheet[address].s.fill = { fgColor: { rgb: "DBEAFE" } };
+            } else {
+              worksheet[address].s.font.color = { rgb: "16A34A" };
+              worksheet[address].s.fill = { fgColor: { rgb: "DCFCE7" } };
+            }
+          }
+        }
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheet,
+        typeData?.name || "Ҳужжатлар"
+      );
+
+      const fileName = `${typeData?.name || "Ҳужжатлар"}_${new Date()
+        .toLocaleDateString("ru-RU")
+        .replace(/\./g, "-")}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      toast.success("Excel файл муваффақиятли юкланди");
+    } catch (error) {
+      console.error("Ошибка экспорта в Excel:", error);
+      toast.error("Excel экспорт қилишда хатолик");
+    }
   };
 
   const handleOpenModal = () => {
@@ -435,7 +682,27 @@ const TypeDocuments = () => {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        {needsCityFilter && (
+          <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+            <span className="font-medium">ℹ️ </span>
+            Сизга бириктирилган ҳудудлар бўйича ҳужжатлар кўрсатилмоқда
+            {userCityIds.length > 0 && (
+              <span> ({userCityIds.length} та шаҳар/туман)</span>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 flex-wrap">
+          <motion.button
+            onClick={exportToExcel}
+            className="bg-green-600 text-white px-4 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <FileSpreadsheet size={18} />
+            Excel
+          </motion.button>
+
           <motion.button
             onClick={() => setShowFilters(!showFilters)}
             className={`px-4 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 ${

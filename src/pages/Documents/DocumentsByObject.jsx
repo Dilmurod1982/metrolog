@@ -1,5 +1,5 @@
 // src/pages/Documents/DocumentsByObject.jsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebase/config";
@@ -17,7 +17,7 @@ import { useLogger } from "../../hooks/useLogger";
 import { MODULES } from "../../services/logger";
 
 const DocumentsByObject = () => {
-  const { language } = useAppStore();
+  const { language, userData } = useAppStore();
   const { logError } = useLogger();
   const navigate = useNavigate();
 
@@ -26,38 +26,54 @@ const DocumentsByObject = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
+  const rolesWithCityFilter = ["tummetrolog", "metrolog", "mexmon"];
+  const needsCityFilter = rolesWithCityFilter.includes(userData?.role);
+
+  const userCityIds = useMemo(() => {
+    return userData?.selectedCities || [];
+  }, [userData?.selectedCities]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Загрузка объектов
       const objectsSnap = await getDocs(collection(db, "objects"));
-      const objectsData = objectsSnap.docs.map((doc) => ({
+      let objectsData = objectsSnap.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      if (needsCityFilter) {
+        if (userCityIds.length > 0) {
+          objectsData = objectsData.filter(
+            (obj) => obj.cityId && userCityIds.includes(obj.cityId)
+          );
+        } else {
+          objectsData = [];
+        }
+      }
+
       setObjects(objectsData);
 
-      // Загрузка документов
       const docsSnap = await getDocs(collection(db, "documents"));
       const docsData = docsSnap.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Загрузка типов документов
       const typesSnap = await getDocs(collection(db, "document_types"));
       const typesData = typesSnap.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Подсчет статистики по объектам
+      const filteredObjectIds = new Set(objectsData.map((obj) => obj.id));
+
       const counts = {};
       const now = new Date();
 
       docsData.forEach((docData) => {
         const objectId = docData.objectId;
-        if (!objectId) return;
+        if (!objectId || !filteredObjectIds.has(objectId)) return;
 
         const docType = docData.docType;
         const expiry = docData.expiryDate ? new Date(docData.expiryDate) : null;
@@ -107,7 +123,7 @@ const DocumentsByObject = () => {
     } finally {
       setLoading(false);
     }
-  }, [logError]);
+  }, [logError, needsCityFilter, userCityIds]);
 
   useEffect(() => {
     loadData();
@@ -140,14 +156,27 @@ const DocumentsByObject = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 to-purple-100 p-4 lg:p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-2">
-          Объектлар бўйича ҳужжатлар
-        </h1>
-        <p className="text-gray-600">Объектлар бўйича ҳужжатлар статистикаси</p>
+      <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-2">
+            Объектлар бўйича ҳужжатлар
+          </h1>
+          <p className="text-gray-600">
+            Объектлар бўйича ҳужжатлар статистикаси
+          </p>
+        </div>
+
+        {needsCityFilter && (
+          <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+            <span className="font-medium">ℹ️ </span>
+            Сизга бириктирилган ҳудудлар бўйича объектлар кўрсатилмоқда
+            {userCityIds.length > 0 && (
+              <span> ({userCityIds.length} та шаҳар/туман)</span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Поиск */}
       <div className="bg-white rounded-2xl shadow-sm p-4 mb-6">
         <div className="relative">
           <Search
@@ -164,7 +193,6 @@ const DocumentsByObject = () => {
         </div>
       </div>
 
-      {/* Сетка объектов */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredObjects.map((obj, index) => {
           const s = stats[obj.id] || {
@@ -215,7 +243,6 @@ const DocumentsByObject = () => {
                 </div>
               </div>
 
-              {/* Худуд */}
               <div className="mb-3 text-xs text-gray-500">
                 📍 {obj.regionName} • {obj.cityName}{" "}
                 {obj.cityType === "Шаҳар" || obj.cityType === "Город"
@@ -225,7 +252,6 @@ const DocumentsByObject = () => {
                   : ""}
               </div>
 
-              {/* Типы документов */}
               {s.documentTypes.size > 0 && (
                 <div className="mb-3">
                   <div className="flex flex-wrap gap-1">
@@ -248,7 +274,6 @@ const DocumentsByObject = () => {
                 </div>
               )}
 
-              {/* Статистика */}
               <div className="space-y-1.5 text-sm border-t pt-3">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500 flex items-center gap-1">
@@ -288,7 +313,6 @@ const DocumentsByObject = () => {
                 )}
               </div>
 
-              {/* Кнопка просмотра */}
               <div className="mt-3 text-center py-2 bg-violet-50 text-violet-600 rounded-lg group-hover:bg-violet-100 transition-colors text-sm font-medium">
                 Ҳужжатларни кўриш
               </div>
@@ -301,7 +325,11 @@ const DocumentsByObject = () => {
         <div className="text-center py-12">
           <Factory className="mx-auto text-gray-400 mb-4" size={48} />
           <h3 className="text-lg font-semibold text-gray-600">
-            {searchTerm ? "Объектлар топилмади" : "Объектлар қўшилмаган"}
+            {searchTerm
+              ? "Объектлар топилмади"
+              : needsCityFilter && userCityIds.length === 0
+              ? "Сизга ҳудудлар бириктирилмаган"
+              : "Объектлар қўшилмаган"}
           </h3>
         </div>
       )}
