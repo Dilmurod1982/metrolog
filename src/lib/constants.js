@@ -32,11 +32,10 @@ export const MENU_ITEMS = {
       ]
     },
     { path: "/plombalar", label: "Пломбалар", icon: "Shield" },
+    { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
     { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
     { path: "/users", label: "Фойдаланувчилар", icon: "Users" },
     { path: "/logs", label: "Тизим журнали", icon: "Activity" },
-    { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
-    
   ],
   admin: [
     { path: "/home-admin", label: "Асосий", icon: "Home" },
@@ -56,13 +55,12 @@ export const MENU_ITEMS = {
       ]
     },
     { path: "/plombalar", label: "Пломбалар", icon: "Shield" },
+    { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
     { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
     { path: "/users", label: "Фойдаланувчилар", icon: "Users" },
-    { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
   ],
   tummetrolog: [
     { path: "/home-tummetrolog", label: "Асосий", icon: "Home" },
-    { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
     { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
     { path: "/documents", label: "Ҳужжатлар", icon: "FileText",
       children: [
@@ -70,6 +68,7 @@ export const MENU_ITEMS = {
         { path: "/documents-by-type", label: "Ҳужжат тури бўйича", icon: "Folder" }
       ]
     },
+    { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
   ],
   metrolog: [
     { path: "/home-metrolog", label: "Асосий", icon: "Home" },
@@ -85,8 +84,8 @@ export const MENU_ITEMS = {
         { path: "/documents-by-type", label: "Ҳужжат тури бўйича", icon: "Folder" }
       ]
     },
-    { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
     { path: "/plomb-installation", label: "Пломба ўрнатиш", icon: "Shield" },
+    { path: "/reports", label: "Ҳисоботлар", icon: "FileText" },
   ],
   mexmon: [
     { path: "/home-mexmon", label: "Асосий", icon: "Home" },
