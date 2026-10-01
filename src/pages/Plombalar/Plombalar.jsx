@@ -40,7 +40,7 @@ const Plombalar = () => {
   const { language, userData } = useAppStore();
   const { logError } = useLogger();
 
-  const [activeTab, setActiveTab] = useState("warehouse"); // "warehouse" | "distribution"
+  const [activeTab, setActiveTab] = useState("warehouse");
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState({ from: "", to: "" });
@@ -50,14 +50,12 @@ const Plombalar = () => {
   });
   const [userFilter, setUserFilter] = useState("Все");
 
-  // Данные
   const [batches, setBatches] = useState([]);
   const [plombs, setPlombs] = useState([]);
   const [users, setUsers] = useState([]);
   const [objects, setObjects] = useState([]);
   const [organizations, setOrganizations] = useState([]);
 
-  // Модальные окна
   const [isAddBatchOpen, setIsAddBatchOpen] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [isBatchDetailOpen, setIsBatchDetailOpen] = useState(false);
@@ -104,7 +102,7 @@ const Plombalar = () => {
     loadData();
   }, [loadData]);
 
-  // Формирование данных для вкладки Омбор
+  // === Формирование данных для вкладки Омбор ===
   const warehouseData = useMemo(() => {
     const batchesWithStats = batches.map((batch) => {
       const batchPlombs = plombs.filter((p) => p.batchId === batch.id);
@@ -118,7 +116,6 @@ const Plombalar = () => {
 
     let filtered = batchesWithStats;
 
-    // Поиск
     if (searchTerm) {
       filtered = filtered.filter(
         (b) =>
@@ -127,7 +124,6 @@ const Plombalar = () => {
       );
     }
 
-    // Фильтр по дате поступления
     if (dateFilter.from) {
       filtered = filtered.filter(
         (b) => b.receivedDate && b.receivedDate >= dateFilter.from
@@ -139,7 +135,6 @@ const Plombalar = () => {
       );
     }
 
-    // Сортировка по дате (новые сначала)
     filtered.sort((a, b) => {
       const dateA = a.receivedDate || "";
       const dateB = b.receivedDate || "";
@@ -149,7 +144,7 @@ const Plombalar = () => {
     return filtered;
   }, [batches, plombs, searchTerm, dateFilter]);
 
-  // Формирование данных для вкладки Таркатма руйхат
+  // === Формирование данных для вкладки Таркатма руйхат ===
   const distributionData = useMemo(() => {
     const usersWithPlombs = users
       .filter(
@@ -159,7 +154,10 @@ const Plombalar = () => {
           u.role === "admin"
       )
       .map((user) => {
-        let userPlombs = plombs.filter((p) => p.assignedTo === user.id);
+        // ВАЖНО: используем uid, а не id документа
+        const userUid = user.uid || user.id;
+
+        let userPlombs = plombs.filter((p) => p.assignedTo === userUid);
 
         // Фильтр по дате прикрепления
         if (assignedDateFilter.from) {
@@ -175,7 +173,6 @@ const Plombalar = () => {
 
         const installedCount = userPlombs.filter((p) => p.installedOn).length;
 
-        // Находим последнюю дату прикрепления
         const lastAssignedDate =
           userPlombs
             .map((p) => p.assignedDate)
@@ -184,6 +181,7 @@ const Plombalar = () => {
 
         return {
           ...user,
+          userUid,
           totalPlombs: userPlombs.length,
           installedPlombs: installedCount,
           remainingPlombs: userPlombs.length - installedCount,
@@ -195,12 +193,10 @@ const Plombalar = () => {
 
     let filtered = usersWithPlombs;
 
-    // Фильтр по сотруднику
     if (userFilter !== "Все") {
       filtered = filtered.filter((u) => u.id === userFilter);
     }
 
-    // Поиск
     if (searchTerm) {
       filtered = filtered.filter(
         (u) =>
@@ -209,7 +205,6 @@ const Plombalar = () => {
       );
     }
 
-    // Сортировка по количеству
     filtered.sort((a, b) => b.totalPlombs - a.totalPlombs);
 
     return filtered;
@@ -331,7 +326,6 @@ const Plombalar = () => {
       {/* Фильтры */}
       <div className="bg-white rounded-2xl shadow-sm p-4 mb-6">
         <div className="flex flex-wrap gap-3 items-end">
-          {/* Поиск */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs text-gray-500 mb-1">Қидириш</label>
             <div className="relative">
@@ -353,7 +347,6 @@ const Plombalar = () => {
             </div>
           </div>
 
-          {/* Фильтр для Омбор - по дате поступления */}
           {activeTab === "warehouse" && (
             <>
               <div>
@@ -387,7 +380,6 @@ const Plombalar = () => {
             </>
           )}
 
-          {/* Фильтр для Таркатма - по сотруднику и дате прикрепления */}
           {activeTab === "distribution" && (
             <>
               <div>
@@ -401,7 +393,9 @@ const Plombalar = () => {
                 >
                   <option value="Все">Барча ходимлар</option>
                   {users
-                    .filter((u) => plombs.some((p) => p.assignedTo === u.id))
+                    .filter((u) =>
+                      plombs.some((p) => p.assignedTo === (u.uid || u.id))
+                    )
                     .map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.firstName} {u.lastName}
@@ -447,7 +441,6 @@ const Plombalar = () => {
             </>
           )}
 
-          {/* Кнопка сброса фильтров */}
           {hasActiveDateFilter && (
             <button
               onClick={resetDateFilters}
@@ -712,7 +705,9 @@ const Plombalar = () => {
           setSelectedUser(null);
         }}
         user={selectedUser}
-        plombs={plombs.filter((p) => p.assignedTo === selectedUser?.id)}
+        plombs={plombs.filter(
+          (p) => p.assignedTo === (selectedUser?.uid || selectedUser?.id)
+        )}
         objects={objects}
         organizations={organizations}
         batches={batches}

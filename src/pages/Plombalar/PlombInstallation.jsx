@@ -7,10 +7,7 @@ import {
   Shield,
   Plus,
   Search,
-  Factory,
-  Gauge,
   Calendar,
-  MapPin,
   CheckCircle,
   Clock,
 } from "lucide-react";
@@ -29,33 +26,42 @@ const PlombInstallation = () => {
   const [objects, setObjects] = useState([]);
   const [meters, setMeters] = useState([]);
   const [isAddPlombOpen, setIsAddPlombOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("remaining"); // "remaining" | "installed"
+  const [activeTab, setActiveTab] = useState("remaining");
+
+  // ВСЕГДА uid
+  const currentUserId = userData?.uid;
 
   const loadData = useCallback(async () => {
-    if (!userData?.id) {
+    if (!currentUserId) {
+      console.warn("⚠️ Нет uid пользователя");
       setLoading(false);
       return;
     }
 
+    console.log("🔵 Загрузка пломб, uid:", currentUserId);
+
     setLoading(true);
     try {
-      // Загружаем пломбы прикреплённые текущему пользователю
       const plombsSnap = await getDocs(
-        query(collection(db, "plombs"), where("assignedTo", "==", userData.id))
+        query(
+          collection(db, "plombs"),
+          where("assignedTo", "==", currentUserId)
+        )
       );
       const plombsData = plombsSnap.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      console.log("✅ Найдено пломб:", plombsData.length);
+
       setMyPlombs(plombsData);
 
-      // Загружаем объекты для отображения информации
       const objectsSnap = await getDocs(collection(db, "objects"));
       setObjects(
         objectsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
       );
 
-      // Загружаем счётчики
       const metersSnap = await getDocs(collection(db, "meters"));
       setMeters(metersSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
     } catch (error) {
@@ -67,13 +73,12 @@ const PlombInstallation = () => {
     } finally {
       setLoading(false);
     }
-  }, [userData?.id, logError]);
+  }, [currentUserId, logError]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Статистика
   const stats = useMemo(() => {
     const installed = myPlombs.filter((p) => p.installedOn).length;
     const remaining = myPlombs.length - installed;
@@ -84,18 +89,15 @@ const PlombInstallation = () => {
     };
   }, [myPlombs]);
 
-  // Фильтрация пломб
   const filteredPlombs = useMemo(() => {
     let filtered = myPlombs;
 
-    // Фильтр по вкладке
     if (activeTab === "remaining") {
       filtered = filtered.filter((p) => !p.installedOn);
     } else {
       filtered = filtered.filter((p) => p.installedOn);
     }
 
-    // Поиск
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -109,12 +111,10 @@ const PlombInstallation = () => {
     return filtered;
   }, [myPlombs, searchTerm, activeTab]);
 
-  // Получить объект по ID
   const getObjectById = (objectId) => {
     return objects.find((o) => o.id === objectId);
   };
 
-  // Получить счётчик по ID
   const getMeterById = (meterId) => {
     return meters.find((m) => m.id === meterId);
   };
@@ -133,7 +133,6 @@ const PlombInstallation = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-teal-50 p-4 lg:p-8">
-      {/* Заголовок */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
         <div>
           <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-2">
@@ -157,7 +156,6 @@ const PlombInstallation = () => {
         </motion.button>
       </div>
 
-      {/* Статистика */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -206,7 +204,6 @@ const PlombInstallation = () => {
         </motion.div>
       </div>
 
-      {/* Вкладки */}
       <div className="flex gap-2 mb-4 bg-white rounded-xl p-1 shadow-sm w-fit">
         <button
           onClick={() => setActiveTab("remaining")}
@@ -238,7 +235,6 @@ const PlombInstallation = () => {
         </button>
       </div>
 
-      {/* Поиск */}
       <div className="bg-white rounded-2xl shadow-sm p-4 mb-6">
         <div className="relative">
           <Search
@@ -259,35 +255,20 @@ const PlombInstallation = () => {
         </div>
       </div>
 
-      {/* Таблица */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gradient-to-r from-green-500 to-teal-600 text-white">
                 <th className="px-4 py-4 text-left font-semibold w-16">№</th>
-                <th className="px-4 py-4 text-left font-semibold">
-                  {language === "uz" ? "Партия" : "Партия"}
-                </th>
-                <th className="px-4 py-4 text-left font-semibold">
-                  {language === "uz" ? "Серия" : "Серия"}
-                </th>
-                <th className="px-4 py-4 text-left font-semibold">
-                  {language === "uz" ? "Рақам" : "Номер"}
-                </th>
+                <th className="px-4 py-4 text-left font-semibold">Партия</th>
+                <th className="px-4 py-4 text-left font-semibold">Серия</th>
+                <th className="px-4 py-4 text-left font-semibold">Рақам</th>
                 <th className="px-4 py-4 text-left font-semibold hidden md:table-cell">
-                  {language === "uz"
-                    ? "Бириктирилган сана"
-                    : "Дата прикрепления"}
+                  Бириктирилган сана
                 </th>
                 <th className="px-4 py-4 text-left font-semibold">
-                  {activeTab === "remaining"
-                    ? language === "uz"
-                      ? "Ҳолат"
-                      : "Статус"
-                    : language === "uz"
-                    ? "Ўрнатилган жой"
-                    : "Место установки"}
+                  {activeTab === "remaining" ? "Ҳолат" : "Ўрнатилган жой"}
                 </th>
               </tr>
             </thead>
@@ -331,7 +312,7 @@ const PlombInstallation = () => {
                     <td className="px-4 py-4">
                       {activeTab === "remaining" ? (
                         <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-                          {language === "uz" ? "Остатокда" : "В остатке"}
+                          Остатокда
                         </span>
                       ) : objectInfo ? (
                         <div className="text-xs">
@@ -352,7 +333,7 @@ const PlombInstallation = () => {
                         </div>
                       ) : (
                         <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                          {language === "uz" ? "Ўрнатилган" : "Установлена"}
+                          Ўрнатилган
                         </span>
                       )}
                     </td>
@@ -368,30 +349,23 @@ const PlombInstallation = () => {
             <Shield className="mx-auto text-gray-400 mb-4" size={48} />
             <h3 className="text-lg font-semibold text-gray-600 mb-2">
               {searchTerm
-                ? language === "uz"
-                  ? "Пломбалар топилмади"
-                  : "Пломбы не найдены"
+                ? "Пломбалар топилмади"
                 : activeTab === "remaining"
-                ? language === "uz"
-                  ? "Остатокда пломбалар йўқ"
-                  : "В остатке нет пломб"
-                : language === "uz"
-                ? "Ҳали пломба ўрнатилмаган"
-                : "Ещё нет установленных пломб"}
+                ? "Остатокда пломбалар йўқ"
+                : "Ҳали пломба ўрнатилмаган"}
             </h3>
             {!searchTerm && activeTab === "remaining" && (
               <button
                 onClick={() => setIsAddPlombOpen(true)}
                 className="mt-4 bg-green-500 text-white px-6 py-2 rounded-lg hover:bg-green-600 transition-colors"
               >
-                {language === "uz" ? "Пломба ўрнатиш" : "Установить пломбу"}
+                Пломба ўрнатиш
               </button>
             )}
           </div>
         )}
       </div>
 
-      {/* Модальное окно */}
       <AddPlombModal
         isOpen={isAddPlombOpen}
         onClose={() => setIsAddPlombOpen(false)}

@@ -9,7 +9,6 @@ import React, {
 import {
   collection,
   getDocs,
-  addDoc,
   updateDoc,
   doc,
   query,
@@ -27,11 +26,9 @@ import {
   CheckCircle,
   QrCode,
   MapPin,
-  Camera,
   Building,
   Factory,
   ChevronDown,
-  Hash,
 } from "lucide-react";
 import { useAppStore } from "../../lib/zustand";
 import { useLogger } from "../../hooks/useLogger";
@@ -42,10 +39,10 @@ import { Html5Qrcode } from "html5-qrcode";
 const AddPlombModal = ({
   isOpen,
   onClose,
-  meter = null, // Если открывается из объектов
-  object = null, // Объект если открывается из объектов
+  meter = null,
+  object = null,
   onAdded,
-  fromObjects = false, // Флаг: открыто из объектов или из Пломба ўрнатиш
+  fromObjects = false,
 }) => {
   const { userData } = useAppStore();
   const { logCreate, logError } = useLogger();
@@ -53,14 +50,12 @@ const AddPlombModal = ({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Данные
   const [myPlombs, setMyPlombs] = useState([]);
   const [myObjects, setMyObjects] = useState([]);
   const [selectedObject, setSelectedObject] = useState(null);
   const [selectedMeter, setSelectedMeter] = useState(null);
   const [availableMeters, setAvailableMeters] = useState([]);
 
-  // Форма
   const [formData, setFormData] = useState({
     objectId: "",
     objectName: "",
@@ -76,7 +71,6 @@ const AddPlombModal = ({
     locationAccuracy: null,
   });
 
-  // UI
   const [showObjectDropdown, setShowObjectDropdown] = useState(false);
   const [showMeterDropdown, setShowMeterDropdown] = useState(false);
   const [showPlombDropdown, setShowPlombDropdown] = useState(false);
@@ -85,12 +79,14 @@ const AddPlombModal = ({
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [qrError, setQrError] = useState("");
   const [validationError, setValidationError] = useState("");
-  const [locationStatus, setLocationStatus] = useState("idle"); // idle | loading | success | error
+  const [locationStatus, setLocationStatus] = useState("idle");
 
   const qrScannerRef = useRef(null);
   const qrContainerRef = useRef(null);
 
-  // Определение мобильного устройства
+  // ВСЕГДА используем uid
+  const currentUserId = userData?.uid;
+
   const isMobile = useMemo(() => {
     if (typeof window === "undefined") return false;
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -100,13 +96,16 @@ const AddPlombModal = ({
 
   // === Загрузка данных ===
   const loadData = useCallback(async () => {
-    if (!userData?.id) return;
+    if (!currentUserId) return;
 
     setLoading(true);
     try {
-      // Пломбы, прикреплённые пользователю
+      // Пломбы пользователя по UID
       const plombsSnap = await getDocs(
-        query(collection(db, "plombs"), where("assignedTo", "==", userData.id))
+        query(
+          collection(db, "plombs"),
+          where("assignedTo", "==", currentUserId)
+        )
       );
       const plombsData = plombsSnap.docs.map((d) => ({
         id: d.id,
@@ -114,7 +113,7 @@ const AddPlombModal = ({
       }));
       setMyPlombs(plombsData);
 
-      // Объекты из прикреплённых городов пользователя
+      // Объекты из прикреплённых городов
       const userCityIds = userData.selectedCities || [];
       const objectsSnap = await getDocs(collection(db, "objects"));
       const allObjects = objectsSnap.docs.map((d) => ({
@@ -135,15 +134,14 @@ const AddPlombModal = ({
     } finally {
       setLoading(false);
     }
-  }, [userData?.id, userData?.selectedCities, logError]);
+  }, [currentUserId, userData?.selectedCities, logError]);
 
-  // === Инициализация при открытии ===
+  // === Инициализация ===
   useEffect(() => {
     if (!isOpen) return;
 
     loadData();
 
-    // Если открыто из объектов - предзаполняем
     if (fromObjects && meter && object) {
       setFormData({
         objectId: object.id,
@@ -162,7 +160,6 @@ const AddPlombModal = ({
       setSelectedObject(object);
       setSelectedMeter(meter);
     } else {
-      // Сброс формы
       setFormData({
         objectId: "",
         objectName: "",
@@ -185,7 +182,6 @@ const AddPlombModal = ({
     setPlombSearchTerm("");
     setObjectSearchTerm("");
 
-    // Автополучение геолокации на мобильном
     if (isMobile) {
       getLocation();
     }
@@ -236,8 +232,6 @@ const AddPlombModal = ({
     setSelectedMeter(null);
     setShowObjectDropdown(false);
     setObjectSearchTerm(obj.objectName);
-
-    // Загружаем активные счётчики для объекта
     loadObjectMeters(obj.id);
   };
 
@@ -246,8 +240,10 @@ const AddPlombModal = ({
       const metersSnap = await getDocs(
         query(collection(db, "meters"), where("objectId", "==", objectId))
       );
-      const allMeters = metersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      // Только активные (без installedTo)
+      const allMeters = metersSnap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
       const activeMeters = allMeters.filter((m) => !m.installedTo);
       setAvailableMeters(activeMeters);
     } catch (error) {
@@ -283,36 +279,31 @@ const AddPlombModal = ({
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (field === "series" || field === "number") {
       setValidationError("");
-      // Если пользователь вводит серию и номер вручную, ищем пломбу
       const newSeries = field === "series" ? value : formData.series;
       const newNumber = field === "number" ? value : formData.number;
       validatePlomb(newSeries, newNumber);
     }
   };
 
-  // === Валидация пломбы ===
+  // === Валидация ===
   const validatePlomb = (series, number) => {
     if (!series || !number) {
       setValidationError("");
       return;
     }
 
-    // Ищем пломбу в myPlombs
     const found = myPlombs.find(
       (p) =>
         p.series?.toLowerCase() === series.toLowerCase() && p.number === number
     );
 
     if (!found) {
-      // Проверим, есть ли пломба вообще в базе
       checkPlombInDatabase(series, number);
       return;
     }
 
     if (found.installedOn) {
-      setValidationError(
-        `Бу пломба аллақачон ўрнатилган (объект: ${found.installedOn})`
-      );
+      setValidationError("Бу пломба аллақачон ўрнатилган");
       return;
     }
 
@@ -342,7 +333,7 @@ const AddPlombModal = ({
         return;
       }
 
-      if (plombData.assignedTo !== userData?.id) {
+      if (plombData.assignedTo !== currentUserId) {
         setValidationError(
           "Бу пломба сизга бириктирилмаган. Администраторга мурожаат қилинг."
         );
@@ -357,14 +348,9 @@ const AddPlombModal = ({
   };
 
   // === QR-сканер ===
-  const startQrScanner = async () => {
-    try {
-      setQrError("");
-      setIsQrScannerOpen(true);
-    } catch (error) {
-      console.error(error);
-      setQrError("Камерани очишда хатолик");
-    }
+  const startQrScanner = () => {
+    setQrError("");
+    setIsQrScannerOpen(true);
   };
 
   useEffect(() => {
@@ -376,19 +362,12 @@ const AddPlombModal = ({
     scanner
       .start(
         { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-        },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           handleQrResult(decodedText);
-          scanner.stop().then(() => {
-            setIsQrScannerOpen(false);
-          });
+          scanner.stop().then(() => setIsQrScannerOpen(false));
         },
-        (errorMessage) => {
-          // Игнорируем ошибки сканирования
-        }
+        () => {}
       )
       .catch((err) => {
         console.error("Ошибка запуска QR-сканера:", err);
@@ -404,12 +383,8 @@ const AddPlombModal = ({
     };
   }, [isQrScannerOpen]);
 
-  // === Обработка QR-кода ===
   const handleQrResult = async (decodedText) => {
-    // Пример ссылки: http://emetrolog.uz/Metrologiyatexkarta/FER/0166248
-    // Где FER - серия, 0166248 - номер
     try {
-      // Парсим URL
       const urlParts = decodedText.split("/").filter(Boolean);
       if (urlParts.length < 2) {
         setQrError("QR код формати нотўғри");
@@ -420,14 +395,8 @@ const AddPlombModal = ({
       const number = urlParts[urlParts.length - 1];
       const series = urlParts[urlParts.length - 2];
 
-      // Устанавливаем в форму
-      setFormData((prev) => ({
-        ...prev,
-        series: series,
-        number: number,
-      }));
+      setFormData((prev) => ({ ...prev, series, number }));
 
-      // Проверяем пломбу
       await validatePlombFromQr(series, number);
     } catch (error) {
       console.error("Ошибка обработки QR:", error);
@@ -446,9 +415,7 @@ const AddPlombModal = ({
       );
 
       if (snap.empty) {
-        setValidationError(
-          "Бундай пломба тизимда топилмади. Iltimos, текширинг."
-        );
+        setValidationError("Бундай пломба тизимда топилмади");
         toast.error("Пломба тизимда топилмади");
         return;
       }
@@ -456,7 +423,6 @@ const AddPlombModal = ({
       const plombData = { id: snap.docs[0].id, ...snap.docs[0].data() };
 
       if (plombData.installedOn) {
-        // Проверим, на каком объекте установлена
         let existingObjectName = "ноаниқ";
         try {
           const objSnap = await getDocs(
@@ -479,7 +445,7 @@ const AddPlombModal = ({
         return;
       }
 
-      if (plombData.assignedTo !== userData?.id) {
+      if (plombData.assignedTo !== currentUserId) {
         setValidationError(
           "Бу пломба сизга бириктирилмаган. Администраторга мурожаат қилинг."
         );
@@ -487,12 +453,11 @@ const AddPlombModal = ({
         return;
       }
 
-      // Всё OK
       setValidationError("");
       setFormData((prev) => ({ ...prev, plombId: plombData.id }));
       toast.success(`Пломба топилди: ${series}-${number}`);
     } catch (error) {
-      console.error("Ошибка валидации пломбы:", error);
+      console.error("Ошибка валидации:", error);
       setValidationError("Пломбани текширишда хатолик");
     }
   };
@@ -516,12 +481,11 @@ const AddPlombModal = ({
 
     setSaving(true);
     try {
-      // Обновляем пломбу - устанавливаем её
       await updateDoc(doc(db, "plombs", formData.plombId), {
         installedOn: formData.objectId,
         installedMeterId: formData.meterId,
         installedDate: formData.installedDate,
-        installedBy: userData?.id || "",
+        installedBy: currentUserId,
         installedByEmail: userData?.email || "",
         status: "Ўрнатилган",
         location: {
@@ -568,7 +532,7 @@ const AddPlombModal = ({
 
   // === Фильтры ===
   const filteredPlombs = useMemo(() => {
-    let list = myPlombs.filter((p) => !p.installedOn); // только неустановленные
+    let list = myPlombs.filter((p) => !p.installedOn);
 
     if (plombSearchTerm) {
       const lower = plombSearchTerm.toLowerCase();
@@ -616,7 +580,6 @@ const AddPlombModal = ({
           exit={{ scale: 0.9, opacity: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Заголовок */}
           <div className="bg-gradient-to-r from-green-500 to-teal-600 text-white p-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold flex items-center gap-2">
@@ -632,9 +595,8 @@ const AddPlombModal = ({
             </div>
           </div>
 
-          {/* Форма */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {/* === Выбор объекта === */}
+            {/* Объект */}
             <div className="relative">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                 <Building size={16} />
@@ -642,7 +604,6 @@ const AddPlombModal = ({
               </label>
 
               {fromObjects && object ? (
-                // Из объектов - заблокировано
                 <div className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-700 font-medium">
                   {object.objectName}
                 </div>
@@ -705,9 +666,6 @@ const AddPlombModal = ({
                             <div className="text-xs text-gray-500">
                               {obj.organizationName} • Л/с: {obj.billingAccount}
                             </div>
-                            <div className="text-xs text-gray-400">
-                              {obj.regionName} • {obj.cityName}
-                            </div>
                           </div>
                         ))
                       )}
@@ -717,7 +675,7 @@ const AddPlombModal = ({
               )}
             </div>
 
-            {/* === Выбор счётчика === */}
+            {/* Счётчик */}
             {formData.objectId && (
               <div className="relative">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
@@ -786,7 +744,7 @@ const AddPlombModal = ({
               </div>
             )}
 
-            {/* === Дата установки === */}
+            {/* Дата */}
             <div>
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                 <Calendar size={16} />
@@ -802,7 +760,7 @@ const AddPlombModal = ({
               />
             </div>
 
-            {/* === Пломба - Серия и Номер === */}
+            {/* Пломба */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -820,8 +778,7 @@ const AddPlombModal = ({
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {/* Серия */}
-                <div className="relative">
+                <div>
                   <label className="block text-xs text-gray-500 mb-1">
                     Серия
                   </label>
@@ -841,8 +798,7 @@ const AddPlombModal = ({
                   />
                 </div>
 
-                {/* Номер */}
-                <div className="relative">
+                <div>
                   <label className="block text-xs text-gray-500 mb-1">
                     Номер
                   </label>
@@ -863,7 +819,6 @@ const AddPlombModal = ({
                 </div>
               </div>
 
-              {/* Выпадающий список пломб */}
               {showPlombDropdown && !formData.plombId && (
                 <div className="relative">
                   <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
@@ -877,7 +832,7 @@ const AddPlombModal = ({
                           type="text"
                           value={plombSearchTerm}
                           onChange={(e) => setPlombSearchTerm(e.target.value)}
-                          placeholder="Пломба қидириш (серия, номер, партия)..."
+                          placeholder="Пломба қидириш..."
                           autoFocus
                           className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
                         />
@@ -911,7 +866,6 @@ const AddPlombModal = ({
                 </div>
               )}
 
-              {/* Ошибка валидации */}
               {validationError && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
@@ -928,7 +882,6 @@ const AddPlombModal = ({
                 </motion.div>
               )}
 
-              {/* Успешная валидация */}
               {formData.plombId && !validationError && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
@@ -943,7 +896,7 @@ const AddPlombModal = ({
               )}
             </div>
 
-            {/* === Геолокация === */}
+            {/* Геолокация */}
             <div className="border-t pt-4">
               <div className="flex items-center justify-between mb-2">
                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -987,7 +940,7 @@ const AddPlombModal = ({
               )}
             </div>
 
-            {/* Индикатор валидности */}
+            {/* Индикатор */}
             <div className="border-t pt-4">
               <div className="flex items-center gap-2 text-sm">
                 {isFormValid ? (
@@ -1050,7 +1003,7 @@ const AddPlombModal = ({
           </div>
         </motion.div>
 
-        {/* === QR-сканер модальное окно === */}
+        {/* QR-сканер */}
         <AnimatePresence>
           {isQrScannerOpen && (
             <motion.div

@@ -1,6 +1,6 @@
 // src/components/Plombalar/PlombDistributionModal.jsx
 import React, { useState, useMemo } from "react";
-import { doc, updateDoc, writeBatch } from "firebase/firestore";
+import { doc, writeBatch } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -37,7 +37,7 @@ const PlombDistributionModal = ({
   );
   const [saving, setSaving] = useState(false);
 
-  // Пломбы на складе (не прикреплённые)
+  // Пломбы на складе
   const warehousePlombs = useMemo(() => {
     let filtered = plombs.filter((p) => !p.assignedTo);
 
@@ -101,27 +101,46 @@ const PlombDistributionModal = ({
 
     setSaving(true);
     try {
+      const targetUser = users.find((u) => u.id === selectedUser);
+
+      if (!targetUser) {
+        throw new Error("Ходим топилмади");
+      }
+
+      // Проверяем наличие uid
+      if (!targetUser.uid) {
+        toast.error(
+          "Хатолик: ходимда UID йўқ. Фойдаланувчилар бўлимидан текширинг."
+        );
+        setSaving(false);
+        return;
+      }
+
+      const targetUserId = targetUser.uid;
+
+      console.log("🔵 Распределение пломб:");
+      console.log("   Ходим:", targetUser.firstName, targetUser.lastName);
+      console.log("   UID:", targetUserId);
+      console.log("   Пломб:", selectedPlombs.length);
+
       const batch = writeBatch(db);
       selectedPlombs.forEach((plombId) => {
         batch.update(doc(db, "plombs", plombId), {
-          assignedTo: selectedUser,
+          assignedTo: targetUserId, // ВСЕГДА uid
           assignedDate: assignedDate,
           status: "Бириктирилган",
-          assignedBy: userData?.email || "",
+          assignedBy: userData?.uid || "",
+          assignedByEmail: userData?.email || "",
         });
       });
       await batch.commit();
 
-      // Находим информацию о сотруднике для лога
-      const user = users.find((u) => u.id === selectedUser);
-      const userName = user
-        ? `${user.firstName} ${user.lastName}`
-        : selectedUser;
+      const userName = `${targetUser.firstName} ${targetUser.lastName}`;
 
       await logCreate(
         MODULES.SETTINGS,
         `${selectedPlombs.length} та пломба "${userName}" ходимга бириктирилди (${assignedDate})`,
-        selectedUser
+        targetUserId
       );
 
       toast.success(
@@ -186,7 +205,6 @@ const PlombDistributionModal = ({
           </div>
 
           <div className="p-4 border-b bg-gray-50 space-y-3">
-            {/* Выбор сотрудника и дата прикрепления */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
@@ -228,7 +246,6 @@ const PlombDistributionModal = ({
               </div>
             </div>
 
-            {/* Фильтры для поиска пломб */}
             <div className="flex gap-3 flex-wrap">
               <div className="flex-1 min-w-[200px] relative">
                 <Search
@@ -270,7 +287,6 @@ const PlombDistributionModal = ({
             </div>
           </div>
 
-          {/* Таблица доступных пломб */}
           <div className="flex-1 overflow-y-auto">
             <table className="w-full">
               <thead className="bg-gray-100 sticky top-0">
