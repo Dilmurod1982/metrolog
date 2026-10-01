@@ -32,6 +32,48 @@ const DocumentsByType = () => {
     return userData?.selectedCities || [];
   }, [userData?.selectedCities]);
 
+  // === Функция выбора ДЕЙСТВУЮЩЕГО документа ===
+  const pickActiveDoc = (existing, candidate, now) => {
+    const existingExpiry = existing.expiryRaw;
+    const currentExpiry = candidate.expiryRaw;
+
+    // Случай 1: текущий без срока (муддатсиз)
+    if (currentExpiry === null && existingExpiry !== null) {
+      return candidate;
+    }
+
+    // Случай 2: существующий без срока — оставляем
+    if (existingExpiry === null && currentExpiry !== null) {
+      return existing;
+    }
+
+    // Случай 3: оба без срока — берём более новый
+    if (currentExpiry === null && existingExpiry === null) {
+      const currentIssue = candidate.issueRaw;
+      const existingIssue = existing.issueRaw;
+      if (currentIssue && existingIssue && currentIssue > existingIssue) {
+        return candidate;
+      }
+      return existing;
+    }
+
+    // Случай 4: оба со сроком
+    const nowTime = now.getTime();
+    const currentIsExpired = currentExpiry.getTime() < nowTime;
+    const existingIsExpired = existingExpiry.getTime() < nowTime;
+
+    if (existingIsExpired && !currentIsExpired) {
+      return candidate;
+    }
+    if (currentIsExpired && !existingIsExpired) {
+      return existing;
+    }
+    if (!currentIsExpired && !existingIsExpired) {
+      return currentExpiry < existingExpiry ? candidate : existing;
+    }
+    return currentExpiry > existingExpiry ? candidate : existing;
+  };
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -52,14 +94,17 @@ const DocumentsByType = () => {
         ...doc.data(),
       }));
 
-      // Загрузка объектов для фильтрации по городам
+      console.log("🔵 === НАЧАЛО ЗАГРУЗКИ DocumentsByType ===");
+      console.log("Всего документов в базе:", docsData.length);
+
+      // Загрузка объектов
       const objectsSnap = await getDocs(collection(db, "objects"));
       const objectsData = {};
       objectsSnap.forEach((doc) => {
         objectsData[doc.id] = { ...doc.data(), id: doc.id };
       });
 
-      // Фильтруем документы по городам пользователя
+      // Фильтруем по городам
       let filteredDocs = docsData;
       if (needsCityFilter) {
         if (userCityIds.length > 0) {
@@ -76,86 +121,115 @@ const DocumentsByType = () => {
         }
       }
 
-      // Получаем только последние документы для каждого объекта
-      const latestDocsMap = {};
+      console.log("После фильтрации по городам:", filteredDocs.length);
+
+      // === ДИАГНОСТИКА: сколько документов без objectId ===
+      const docsWithoutObjectId = filteredDocs.filter((d) => !d.objectId);
+      console.log("Документов без objectId:", docsWithoutObjectId.length);
+
+      // === Группировка документов по типам ===
+      const docsByType = {};
+      filteredDocs.forEach((doc) => {
+        const docType = doc.docType;
+        if (!docsByType[docType]) {
+          docsByType[docType] = [];
+        }
+        docsByType[docType].push(doc);
+      });
+
+      console.log("Документов по типам:");
+      Object.entries(docsByType).forEach(([typeId, docs]) => {
+        const typeInfo = typesData.find(
+          (t) => t.id === typeId || t.firebaseId === typeId
+        );
+        console.log(
+          `   ${typeInfo?.name || typeId}: ${docs.length} (docType: ${typeId})`
+        );
+      });
+
+      // === Получаем действующий документ для каждого объекта ===
+      // ВАЖНО: группируем по объекту, а НЕ по типу документа
+      // (у одного объекта может быть несколько типов документов)
+      const activeDocsByType = {}; // { docType: { objectId: doc } }
       const now = new Date();
 
       filteredDocs.forEach((doc) => {
-        const key = doc.objectId;
-        if (!key) return;
+        const objectId = doc.objectId;
+        const docType = doc.docType;
+
+        if (!objectId || !docType) {
+          console.warn("⚠️ Документ без objectId или docType:", doc.id);
+          return;
+        }
 
         const expiry = doc.expiryDate ? new Date(doc.expiryDate) : null;
         const issue = doc.issueDate ? new Date(doc.issueDate) : null;
 
-        if (!latestDocsMap[key]) {
-          latestDocsMap[key] = { ...doc, expiryRaw: expiry, issueRaw: issue };
-        } else {
-          const currentExpiry = expiry;
-          const existingExpiry = latestDocsMap[key].expiryRaw;
+        const candidate = { ...doc, expiryRaw: expiry, issueRaw: issue };
 
-          if (currentExpiry === null) {
-            if (existingExpiry === null) {
-              if (
-                issue &&
-                latestDocsMap[key].issueRaw &&
-                issue > latestDocsMap[key].issueRaw
-              ) {
-                latestDocsMap[key] = {
-                  ...doc,
-                  expiryRaw: expiry,
-                  issueRaw: issue,
-                };
-              }
-            } else {
-              latestDocsMap[key] = {
-                ...doc,
-                expiryRaw: expiry,
-                issueRaw: issue,
-              };
-            }
-          } else if (existingExpiry === null) {
-            // Оставляем существующий без срока
-          } else if (currentExpiry > existingExpiry) {
-            latestDocsMap[key] = { ...doc, expiryRaw: expiry, issueRaw: issue };
-          }
+        // Инициализация структуры: активные документы группируем по типу и объекту
+        if (!activeDocsByType[docType]) {
+          activeDocsByType[docType] = {};
+        }
+
+        if (!activeDocsByType[docType][objectId]) {
+          activeDocsByType[docType][objectId] = candidate;
+        } else {
+          activeDocsByType[docType][objectId] = pickActiveDoc(
+            activeDocsByType[docType][objectId],
+            candidate,
+            now
+          );
         }
       });
 
-      const latestDocs = Object.values(latestDocsMap);
+      console.log("Активные документы по типам:");
+      Object.entries(activeDocsByType).forEach(([typeId, objMap]) => {
+        const typeInfo = typesData.find(
+          (t) => t.id === typeId || t.firebaseId === typeId
+        );
+        console.log(
+          `   ${typeInfo?.name || typeId}: ${Object.keys(objMap).length} та`
+        );
+      });
 
-      // Подсчет статистики по типам документов
+      // === Подсчёт статистики ===
       const counts = {};
 
-      latestDocs.forEach((doc) => {
-        const docType = doc.docType;
-        const expiry = doc.expiryRaw;
-        const diffDays = expiry
-          ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))
-          : Infinity;
+      Object.entries(activeDocsByType).forEach(([docType, objMap]) => {
+        const activeDocs = Object.values(objMap);
 
-        if (!counts[docType]) {
-          counts[docType] = {
-            total: 0,
-            expired: 0,
-            less30: 0,
-            less15: 0,
-            less5: 0,
-            infinity: 0,
-          };
-        }
+        counts[docType] = {
+          total: 0,
+          expired: 0,
+          less30: 0,
+          less15: 0,
+          less5: 0,
+          infinity: 0,
+        };
 
-        counts[docType].total++;
+        activeDocs.forEach((doc) => {
+          const expiry = doc.expiryRaw;
+          const diffDays = expiry
+            ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))
+            : Infinity;
 
-        if (expiry === null || diffDays === Infinity) {
-          counts[docType].infinity++;
-          return;
-        }
+          counts[docType].total++;
 
-        if (diffDays < 0) counts[docType].expired++;
-        else if (diffDays <= 5) counts[docType].less5++;
-        else if (diffDays <= 15) counts[docType].less15++;
-        else if (diffDays <= 30) counts[docType].less30++;
+          if (expiry === null || diffDays === Infinity) {
+            counts[docType].infinity++;
+            return;
+          }
+
+          if (diffDays < 0) counts[docType].expired++;
+          else if (diffDays <= 5) counts[docType].less5++;
+          else if (diffDays <= 15) counts[docType].less15++;
+          else if (diffDays <= 30) counts[docType].less30++;
+        });
       });
+
+      console.log("Итоговая статистика:", counts);
+      console.log("🔵 === КОНЕЦ ЗАГРУЗКИ ===\n");
 
       setStats(counts);
     } catch (error) {
@@ -233,7 +307,7 @@ const DocumentsByType = () => {
         </div>
       </div>
 
-      {/* Сетка типов документов */}
+      {/* Сетка типов */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredTypes.map((type, index) => {
           const s = stats[type.id] ||
