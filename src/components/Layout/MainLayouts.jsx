@@ -22,6 +22,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronDownIcon,
+  ShieldCheckIcon,
 } from "@heroicons/react/24/outline";
 
 const iconMap = {
@@ -35,12 +36,13 @@ const iconMap = {
   Gauge: AdjustmentsHorizontalIcon,
   Activity: SignalIcon,
   Folder: FolderIcon,
+  Shield: ShieldCheckIcon,
 };
 
 const MainLayouts = memo(() => {
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Для мобильного
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Для десктопа
-  const [expandedMenus, setExpandedMenus] = useState({}); // Отслеживание раскрытых подменю
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState({});
 
   const userData = useAppStore((state) => state.userData);
   const language = useAppStore((state) => state.language);
@@ -309,7 +311,7 @@ const SidebarContent = memo(
           </nav>
         </div>
 
-        {/* Индикатор сворачивания */}
+        {/* Индикатор версии */}
         {!collapsed && (
           <div className="border-t border-gray-200 p-3">
             <p className="text-xs text-gray-400 text-center">

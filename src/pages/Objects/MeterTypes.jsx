@@ -18,11 +18,14 @@ import {
   Gauge,
   CheckCircle,
   AlertCircle,
+  Shield,
+  Trash2,
 } from "lucide-react";
 import { useAppStore } from "../../lib/zustand";
 import { translations } from "../../lib/i18n";
 import { useLogger } from "../../hooks/useLogger";
 import { MODULES } from "../../services/logger";
+import { toast } from "react-hot-toast";
 
 const MeterTypes = () => {
   const { language } = useAppStore();
@@ -39,6 +42,7 @@ const MeterTypes = () => {
   const [newType, setNewType] = useState({
     name: "",
     type: "Счетчик с перепадом",
+    plombParts: [],
   });
 
   const meterTypeOptions = [
@@ -53,6 +57,7 @@ const MeterTypes = () => {
       const typesSnapshot = await getDocs(collection(db, "meterTypes"));
       const typesData = typesSnapshot.docs.map((doc) => ({
         id: doc.id,
+        plombParts: [],
         ...doc.data(),
       }));
       setMeterTypes(typesData);
@@ -91,8 +96,41 @@ const MeterTypes = () => {
     }
   };
 
+  // === Работа с частями установки пломб ===
+
+  const getCurrentPlombParts = () => {
+    if (isCreating) return newType.plombParts || [];
+    return selectedType?.plombParts || [];
+  };
+
+  const setCurrentPlombParts = (parts) => {
+    if (isCreating) {
+      setNewType((prev) => ({ ...prev, plombParts: parts }));
+    } else {
+      setSelectedType((prev) => ({ ...prev, plombParts: parts }));
+    }
+  };
+
+  const handleAddPlombPart = () => {
+    const parts = getCurrentPlombParts();
+    setCurrentPlombParts([...parts, { name: "" }]);
+  };
+
+  const handlePlombPartChange = (index, value) => {
+    const parts = [...getCurrentPlombParts()];
+    parts[index] = { ...parts[index], name: value };
+    setCurrentPlombParts(parts);
+  };
+
+  const handleRemovePlombPart = (index) => {
+    const parts = getCurrentPlombParts();
+    setCurrentPlombParts(parts.filter((_, i) => i !== index));
+  };
+
+  // === Модальные окна ===
+
   const handleTypeClick = (type) => {
-    setSelectedType({ ...type });
+    setSelectedType({ ...type, plombParts: type.plombParts || [] });
     setIsModalOpen(true);
     setIsEditMode(false);
   };
@@ -100,7 +138,11 @@ const MeterTypes = () => {
   const handleCreateType = () => {
     setIsCreating(true);
     setIsModalOpen(true);
-    setNewType({ name: "", type: "Счетчик с перепадом" });
+    setNewType({
+      name: "",
+      type: "Счетчик с перепадом",
+      plombParts: [],
+    });
   };
 
   const handleCloseModal = () => {
@@ -116,29 +158,57 @@ const MeterTypes = () => {
 
   const handleSave = async () => {
     const isValid = checkFormValidity();
-    if (!isValid) return;
+    if (!isValid) {
+      toast.error(
+        language === "uz"
+          ? "Барча мажбурий қаторларни тўлдиринг"
+          : "Заполните все обязательные поля"
+      );
+      return;
+    }
+
+    // Проверяем, что все части имеют названия
+    const parts = getCurrentPlombParts();
+    const emptyParts = parts.filter((p) => !p.name || !p.name.trim());
+    if (emptyParts.length > 0) {
+      toast.error(
+        language === "uz"
+          ? "Барча пломба қисмлари номини тўлдиринг"
+          : "Заполните названия всех частей пломб"
+      );
+      return;
+    }
 
     try {
+      // Очищаем пустые части
+      const cleanParts = parts.filter((p) => p.name && p.name.trim());
+
       if (isCreating) {
         const docRef = await addDoc(collection(db, "meterTypes"), {
-          ...newType,
+          name: newType.name,
+          type: newType.type,
+          plombParts: cleanParts,
           createdAt: new Date(),
         });
         await logCreate(
           MODULES.OBJECTS,
-          `Создан тип счетчика: ${newType.name}`,
+          `Создан тип счетчика: ${newType.name} (${cleanParts.length} та пломба қисми)`,
           docRef.id
         );
+        toast.success("Ҳисоблагич тури яратилди");
       } else {
         await updateDoc(doc(db, "meterTypes", selectedType.id), {
-          ...selectedType,
+          name: selectedType.name,
+          type: selectedType.type,
+          plombParts: cleanParts,
           updatedAt: new Date(),
         });
         await logUpdate(
           MODULES.OBJECTS,
-          `Обновлен тип счетчика: ${selectedType.name}`,
+          `Обновлен тип счетчика: ${selectedType.name} (${cleanParts.length} та пломба қисми)`,
           selectedType.id
         );
+        toast.success("Ҳисоблагич тури янгиланди");
       }
 
       await loadData();
@@ -149,6 +219,7 @@ const MeterTypes = () => {
         MODULES.OBJECTS,
         `Ошибка сохранения типа счетчика: ${error.message}`
       );
+      toast.error("Сақлашда хатолик");
     }
   };
 
@@ -160,11 +231,16 @@ const MeterTypes = () => {
       const originalType = meterTypes.find(
         (type) => type.id === selectedType.id
       );
-      setSelectedType(originalType ? { ...originalType } : null);
+      setSelectedType(
+        originalType
+          ? { ...originalType, plombParts: originalType.plombParts || [] }
+          : null
+      );
     }
   };
 
   const isFormValid = checkFormValidity();
+  const plombParts = getCurrentPlombParts();
 
   if (loading) {
     return (
@@ -208,6 +284,7 @@ const MeterTypes = () => {
         </motion.button>
       </motion.div>
 
+      {/* Поиск */}
       <motion.div
         className="bg-white rounded-2xl shadow-sm p-4 mb-6"
         initial={{ opacity: 0, y: 20 }}
@@ -229,6 +306,7 @@ const MeterTypes = () => {
         </div>
       </motion.div>
 
+      {/* Таблица */}
       <motion.div
         className="bg-white rounded-2xl shadow-sm overflow-hidden"
         initial={{ opacity: 0 }}
@@ -245,6 +323,9 @@ const MeterTypes = () => {
                 </th>
                 <th className="px-4 py-4 text-left font-semibold">
                   {language === "uz" ? "Ҳисоблагич тури" : "Тип счетчика"}
+                </th>
+                <th className="px-4 py-4 text-left font-semibold hidden md:table-cell">
+                  {language === "uz" ? "Пломба қисмлари" : "Части пломб"}
                 </th>
               </tr>
             </thead>
@@ -283,6 +364,12 @@ const MeterTypes = () => {
                       {type.type}
                     </span>
                   </td>
+                  <td className="px-4 py-4 hidden md:table-cell">
+                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium">
+                      <Shield size={14} />
+                      {type.plombParts?.length || 0} та
+                    </span>
+                  </td>
                 </motion.tr>
               ))}
             </tbody>
@@ -294,7 +381,6 @@ const MeterTypes = () => {
             className="text-center py-12"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.6 }}
           >
             <Gauge className="mx-auto text-gray-400 mb-4" size={48} />
             <h3 className="text-lg font-semibold text-gray-600 mb-2">
@@ -362,8 +448,9 @@ const MeterTypes = () => {
                 </div>
               </div>
 
-              <div className="p-6 max-h-[60vh] overflow-y-auto">
+              <div className="p-6 max-h-[65vh] overflow-y-auto">
                 <div className="space-y-6">
+                  {/* Название */}
                   <div>
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                       <Gauge size={16} />
@@ -390,6 +477,7 @@ const MeterTypes = () => {
                     />
                   </div>
 
+                  {/* Тип */}
                   <div>
                     <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
                       <Gauge size={16} />
@@ -413,6 +501,117 @@ const MeterTypes = () => {
                     </select>
                   </div>
 
+                  {/* === Раздел частей установки пломб === */}
+                  <div className="border-t pt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                          <Shield size={18} />
+                          {language === "uz"
+                            ? "Пломба ўрнатиш қисмлари"
+                            : "Части установки пломб"}
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {language === "uz"
+                            ? "Ушбу ҳисоблагич тури учун пломба ўрнатиладиган қисмлар"
+                            : "Части, на которые устанавливаются пломбы для этого типа счетчика"}
+                        </p>
+                      </div>
+
+                      {(isCreating || isEditMode) && (
+                        <motion.button
+                          type="button"
+                          onClick={handleAddPlombPart}
+                          className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition-colors"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <Plus size={16} />
+                          {language === "uz" ? "Қўшиш" : "Добавить"}
+                        </motion.button>
+                      )}
+                    </div>
+
+                    {/* Список частей */}
+                    <div className="space-y-2">
+                      {plombParts.length === 0 ? (
+                        <div className="text-center py-6 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                          <Shield
+                            className="mx-auto text-gray-300 mb-2"
+                            size={32}
+                          />
+                          <p className="text-sm text-gray-500">
+                            {language === "uz"
+                              ? "Пломба қисмлари қўшилмаган"
+                              : "Части пломб не добавлены"}
+                          </p>
+                          {(isCreating || isEditMode) && (
+                            <button
+                              type="button"
+                              onClick={handleAddPlombPart}
+                              className="mt-3 text-sm text-orange-600 hover:text-orange-700 font-medium"
+                            >
+                              +{" "}
+                              {language === "uz"
+                                ? "Биринчи қисмни қўшиш"
+                                : "Добавить первую часть"}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        plombParts.map((part, index) => (
+                          <motion.div
+                            key={index}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                            className="flex items-center gap-2 p-3 bg-orange-50 border border-orange-100 rounded-xl"
+                          >
+                            <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <span className="text-orange-700 font-bold text-sm">
+                                {index + 1}
+                              </span>
+                            </div>
+                            <input
+                              type="text"
+                              value={part.name}
+                              onChange={(e) =>
+                                handlePlombPartChange(index, e.target.value)
+                              }
+                              disabled={!isCreating && !isEditMode}
+                              placeholder={
+                                language === "uz"
+                                  ? "Қисм номини киритинг (масалан: Корпус)"
+                                  : "Введите название части (например: Корпус)"
+                              }
+                              className="flex-1 px-3 py-2 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 bg-white"
+                            />
+                            {(isCreating || isEditMode) && (
+                              <motion.button
+                                type="button"
+                                onClick={() => handleRemovePlombPart(index)}
+                                className="w-9 h-9 bg-red-100 text-red-600 rounded-lg flex items-center justify-center hover:bg-red-200 transition-colors flex-shrink-0"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                              >
+                                <Trash2 size={16} />
+                              </motion.button>
+                            )}
+                          </motion.div>
+                        ))
+                      )}
+                    </div>
+
+                    {plombParts.length > 0 && (
+                      <div className="mt-3 text-sm text-gray-500">
+                        {language === "uz"
+                          ? `Жами: ${plombParts.length} та қисм`
+                          : `Всего: ${plombParts.length} частей`}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Индикатор валидности */}
                   {(isCreating || isEditMode) && (
                     <div className="border-t pt-6">
                       <div className="flex items-center gap-2 text-sm">

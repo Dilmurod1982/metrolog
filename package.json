@@ -13,6 +13,7 @@
     "@heroicons/react": "^2.2.0",
     "firebase": "^12.17.1",
     "framer-motion": "^13.1.0",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.32.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

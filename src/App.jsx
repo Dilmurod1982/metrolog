@@ -32,6 +32,8 @@ import DocumentsByObject from "./pages/Documents/DocumentsByObject";
 import DocumentsByType from "./pages/Documents/DocumentsByType";
 import ObjectDocuments from "./pages/Documents/ObjectDocuments";
 import TypeDocuments from "./pages/Documents/TypeDocuments";
+import Plombalar from "./pages/Plombalar/Plombalar";
+import PlombInstallation from "./pages/Plombalar/PlombInstallation";
 
 // Выносим ProtectedLayout за пределы компонента App
 const ProtectedLayout = ({ allowedRoles, element }) => {
@@ -217,6 +219,30 @@ function App() {
               />
             ),
           },
+          {
+            path: "/plomb-installation",
+            element: (
+              <ProtectedLayout
+                allowedRoles={[
+                  "superadmin",
+                  "admin",
+                  "metrolog",
+                  "tummetrolog",
+                ]}
+                element={<PlombInstallation />}
+              />
+            ),
+          },
+          {
+            path: "/plombalar",
+            element: (
+              <ProtectedLayout
+                allowedRoles={["superadmin", "admin"]}
+                element={<Plombalar />}
+              />
+            ),
+          },
+
           {
             path: "/home-mexmon",
             element: (
