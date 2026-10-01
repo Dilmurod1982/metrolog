@@ -29,6 +29,18 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
   });
   const [saving, setSaving] = useState(false);
 
+  // Определяем длину номеров (для добавления ведущих нулей)
+  const getNumberLength = () => {
+    const from = formData.fromNumber?.toString() || "";
+    const to = formData.toNumber?.toString() || "";
+    return Math.max(from.length, to.length);
+  };
+
+  // Форматируем число с ведущими нулями
+  const formatNumber = (num, length) => {
+    return String(num).padStart(length, "0");
+  };
+
   const calculateQuantity = () => {
     const from = parseInt(formData.fromNumber);
     const to = parseInt(formData.toNumber);
@@ -48,7 +60,7 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
       !isNaN(from) &&
       !isNaN(to) &&
       to >= from &&
-      from > 0
+      from >= 0
     );
   };
 
@@ -67,15 +79,17 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
       const quantity = calculateQuantity();
       const fromNum = parseInt(formData.fromNumber);
       const toNum = parseInt(formData.toNumber);
+      const numLength = getNumberLength();
 
       // Создаём партию
       const batchRef = await addDoc(collection(db, "plomb_batches"), {
         batchNumber: formData.batchNumber,
         receivedDate: formData.receivedDate,
         series: formData.series,
-        fromNumber: formData.fromNumber,
-        toNumber: formData.toNumber,
+        fromNumber: formatNumber(fromNum, numLength), // Сохраняем как строку с нулями
+        toNumber: formatNumber(toNum, numLength), // Сохраняем как строку с нулями
         quantity: quantity,
+        numberLength: numLength, // Сохраняем длину для справки
         createdBy: userData?.email || "",
         createdAt: new Date(),
       });
@@ -89,7 +103,7 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
           batchNumber: formData.batchNumber,
           receivedDate: formData.receivedDate,
           series: formData.series,
-          number: String(i),
+          number: formatNumber(i, numLength), // ВАЖНО: строка с ведущими нулями
           assignedTo: null,
           assignedDate: null,
           installedOn: null,
@@ -102,7 +116,7 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
 
       await logCreate(
         MODULES.SETTINGS,
-        `Пломба партияси қўшилди: ${formData.batchNumber} (${quantity} та)`,
+        `Пломба партияси қўшилди: ${formData.batchNumber} (${quantity} та, ${formData.series})`,
         batchRef.id
       );
 
@@ -130,6 +144,20 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
 
   const isFormValid = checkFormValidity();
   const quantity = calculateQuantity();
+  const numLength = getNumberLength();
+
+  // Предпросмотр номеров
+  const previewNumbers = () => {
+    const from = parseInt(formData.fromNumber);
+    const to = parseInt(formData.toNumber);
+    if (isNaN(from) || isNaN(to) || to < from) return null;
+    return {
+      first: formatNumber(from, numLength),
+      last: formatNumber(to, numLength),
+    };
+  };
+
+  const preview = previewNumbers();
 
   if (!isOpen) return null;
 
@@ -202,7 +230,7 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
                 value={formData.series}
                 onChange={(e) => handleChange("series", e.target.value)}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                placeholder="Мисол: A"
+                placeholder="Мисол: FER"
               />
             </div>
 
@@ -213,11 +241,15 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
                   Дан (рақами) *
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   value={formData.fromNumber}
-                  onChange={(e) => handleChange("fromNumber", e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                  placeholder="1000"
+                  onChange={(e) => {
+                    // Разрешаем только цифры
+                    const val = e.target.value.replace(/\D/g, "");
+                    handleChange("fromNumber", val);
+                  }}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono"
+                  placeholder="0166001"
                 />
               </div>
               <div>
@@ -225,14 +257,33 @@ const AddPlombBatchModal = ({ isOpen, onClose, onBatchAdded }) => {
                   Гача (рақами) *
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   value={formData.toNumber}
-                  onChange={(e) => handleChange("toNumber", e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-                  placeholder="1100"
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    handleChange("toNumber", val);
+                  }}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono"
+                  placeholder="0166500"
                 />
               </div>
             </div>
+
+            {/* Предпросмотр */}
+            {preview && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-700 mb-1">
+                  <b>Намуна:</b>
+                </p>
+                <p className="font-mono text-sm text-blue-800">
+                  {formData.series || "СЕРИЯ"}-{preview.first} ...{" "}
+                  {formData.series || "СЕРИЯ"}-{preview.last}
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  Жами рақам узунлиги: {numLength} белги
+                </p>
+              </div>
+            )}
 
             {/* Количество */}
             <div>
