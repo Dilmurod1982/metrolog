@@ -52,9 +52,11 @@ const AddPlombModal = ({
 
   const [myPlombs, setMyPlombs] = useState([]);
   const [myObjects, setMyObjects] = useState([]);
+  const [meterTypes, setMeterTypes] = useState([]);
   const [selectedObject, setSelectedObject] = useState(null);
   const [selectedMeter, setSelectedMeter] = useState(null);
   const [availableMeters, setAvailableMeters] = useState([]);
+  const [availableParts, setAvailableParts] = useState([]); // Части для установки
 
   const [formData, setFormData] = useState({
     objectId: "",
@@ -62,6 +64,8 @@ const AddPlombModal = ({
     meterId: "",
     meterSerialNumber: "",
     meterTypeName: "",
+    meterTypeId: "",
+    partName: "", // Название части для установки
     plombId: "",
     series: "",
     number: "",
@@ -73,6 +77,7 @@ const AddPlombModal = ({
 
   const [showObjectDropdown, setShowObjectDropdown] = useState(false);
   const [showMeterDropdown, setShowMeterDropdown] = useState(false);
+  const [showPartDropdown, setShowPartDropdown] = useState(false);
   const [showPlombDropdown, setShowPlombDropdown] = useState(false);
   const [plombSearchTerm, setPlombSearchTerm] = useState("");
   const [objectSearchTerm, setObjectSearchTerm] = useState("");
@@ -84,7 +89,6 @@ const AddPlombModal = ({
   const qrScannerRef = useRef(null);
   const qrContainerRef = useRef(null);
 
-  // ВСЕГДА используем uid
   const currentUserId = userData?.uid;
 
   const isMobile = useMemo(() => {
@@ -100,27 +104,27 @@ const AddPlombModal = ({
 
     setLoading(true);
     try {
-      // Пломбы пользователя по UID
-      const plombsSnap = await getDocs(
-        query(
-          collection(db, "plombs"),
-          where("assignedTo", "==", currentUserId)
-        )
-      );
-      const plombsData = plombsSnap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-      setMyPlombs(plombsData);
+      const [plombsSnap, objectsSnap, meterTypesSnap] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, "plombs"),
+            where("assignedTo", "==", currentUserId)
+          )
+        ),
+        getDocs(collection(db, "objects")),
+        getDocs(collection(db, "meterTypes")),
+      ]);
 
-      // Объекты из прикреплённых городов
+      setMyPlombs(plombsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setMeterTypes(
+        meterTypesSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      );
+
       const userCityIds = userData.selectedCities || [];
-      const objectsSnap = await getDocs(collection(db, "objects"));
       const allObjects = objectsSnap.docs.map((d) => ({
         id: d.id,
         ...d.data(),
       }));
-
       const filteredObjects = allObjects.filter(
         (obj) => obj.cityId && userCityIds.includes(obj.cityId)
       );
@@ -136,7 +140,7 @@ const AddPlombModal = ({
     }
   }, [currentUserId, userData?.selectedCities, logError]);
 
-  // === Инициализация ===
+  // === Инициализация при открытии ===
   useEffect(() => {
     if (!isOpen) return;
 
@@ -149,6 +153,8 @@ const AddPlombModal = ({
         meterId: meter.id,
         meterSerialNumber: meter.serialNumber,
         meterTypeName: meter.meterTypeName,
+        meterTypeId: meter.meterTypeId || "",
+        partName: "",
         plombId: "",
         series: "",
         number: "",
@@ -166,6 +172,8 @@ const AddPlombModal = ({
         meterId: "",
         meterSerialNumber: "",
         meterTypeName: "",
+        meterTypeId: "",
+        partName: "",
         plombId: "",
         series: "",
         number: "",
@@ -181,11 +189,28 @@ const AddPlombModal = ({
     setValidationError("");
     setPlombSearchTerm("");
     setObjectSearchTerm("");
+    setAvailableParts([]);
 
     if (isMobile) {
       getLocation();
     }
   }, [isOpen, fromObjects, meter, object, isMobile, loadData]);
+
+  // === При выборе счётчика - подгружаем части ===
+  useEffect(() => {
+    if (!formData.meterTypeId || meterTypes.length === 0) {
+      setAvailableParts([]);
+      return;
+    }
+
+    const meterType = meterTypes.find((t) => t.id === formData.meterTypeId);
+
+    if (meterType && meterType.plombParts) {
+      setAvailableParts(meterType.plombParts);
+    } else {
+      setAvailableParts([]);
+    }
+  }, [formData.meterTypeId, meterTypes]);
 
   // === Геолокация ===
   const getLocation = () => {
@@ -208,7 +233,6 @@ const AddPlombModal = ({
       (error) => {
         console.error("Ошибка геолокации:", error);
         setLocationStatus("error");
-        toast.error("Жойлашувни олишда хатолик");
       },
       {
         enableHighAccuracy: true,
@@ -228,8 +252,11 @@ const AddPlombModal = ({
       meterId: "",
       meterSerialNumber: "",
       meterTypeName: "",
+      meterTypeId: "",
+      partName: "",
     }));
     setSelectedMeter(null);
+    setAvailableParts([]);
     setShowObjectDropdown(false);
     setObjectSearchTerm(obj.objectName);
     loadObjectMeters(obj.id);
@@ -259,8 +286,15 @@ const AddPlombModal = ({
       meterId: meter.id,
       meterSerialNumber: meter.serialNumber,
       meterTypeName: meter.meterTypeName,
+      meterTypeId: meter.meterTypeId || "",
+      partName: "",
     }));
     setShowMeterDropdown(false);
+  };
+
+  const handlePartSelect = (partName) => {
+    setFormData((prev) => ({ ...prev, partName: partName }));
+    setShowPartDropdown(false);
   };
 
   const handlePlombSelect = (plomb) => {
@@ -285,7 +319,7 @@ const AddPlombModal = ({
     }
   };
 
-  // === Валидация ===
+  // === Валидация пломбы ===
   const validatePlomb = (series, number) => {
     if (!series || !number) {
       setValidationError("");
@@ -365,7 +399,10 @@ const AddPlombModal = ({
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           handleQrResult(decodedText);
-          scanner.stop().then(() => setIsQrScannerOpen(false));
+          scanner
+            .stop()
+            .then(() => setIsQrScannerOpen(false))
+            .catch(() => {});
         },
         () => {}
       )
@@ -383,23 +420,58 @@ const AddPlombModal = ({
     };
   }, [isQrScannerOpen]);
 
+  // === ИСПРАВЛЕННЫЙ парсер QR-кода ===
+  // Формат: http://emetrolog.uz/Metrologiyatexkarta/FER/0166248
+  // FER - серия, 0166248 - номер
   const handleQrResult = async (decodedText) => {
     try {
+      console.log("🔵 QR отсканирован:", decodedText);
+
+      // Парсим URL
       const urlParts = decodedText.split("/").filter(Boolean);
-      if (urlParts.length < 2) {
-        setQrError("QR код формати нотўғри");
-        toast.error("QR код формати нотўғри");
+      console.log("Части URL:", urlParts);
+
+      // Ищем индекс "Metrologiyatexkarta"
+      const markerIndex = urlParts.findIndex(
+        (part) =>
+          part.toLowerCase() === "metrologiyatexkarta" ||
+          part.toLowerCase().includes("metrologiya")
+      );
+
+      let series = "";
+      let number = "";
+
+      if (markerIndex !== -1 && urlParts.length > markerIndex + 2) {
+        // После Metrologiyatexkarta идут: серия, номер
+        series = urlParts[markerIndex + 1];
+        number = urlParts[markerIndex + 2];
+      } else {
+        // Fallback: последние два сегмента
+        if (urlParts.length >= 2) {
+          series = urlParts[urlParts.length - 2];
+          number = urlParts[urlParts.length - 1];
+        } else {
+          setQrError("QR код формати нотўғри");
+          toast.error("QR код формати нотўғри");
+          return;
+        }
+      }
+
+      // Валидация
+      if (!series || !number) {
+        setQrError("QR коддан маълумот олинмади");
+        toast.error("QR коддан маълумот олинмади");
         return;
       }
 
-      const number = urlParts[urlParts.length - 1];
-      const series = urlParts[urlParts.length - 2];
+      console.log("✅ Серия:", series, "Номер:", number);
 
       setFormData((prev) => ({ ...prev, series, number }));
 
       await validatePlombFromQr(series, number);
     } catch (error) {
       console.error("Ошибка обработки QR:", error);
+      setQrError("QR кодни ўқишда хатолик");
       toast.error("QR кодни ўқишда хатолик");
     }
   };
@@ -415,8 +487,8 @@ const AddPlombModal = ({
       );
 
       if (snap.empty) {
-        setValidationError("Бундай пломба тизимда топилмади");
-        toast.error("Пломба тизимда топилмади");
+        setValidationError(`Пломба ${series}-${number} тизимда топилмади`);
+        toast.error(`Пломба ${series}-${number} тизимда топилмади`);
         return;
       }
 
@@ -467,6 +539,7 @@ const AddPlombModal = ({
     return (
       formData.objectId &&
       formData.meterId &&
+      formData.partName && // Обязательно выбрана часть
       formData.plombId &&
       formData.installedDate &&
       !validationError
@@ -484,6 +557,7 @@ const AddPlombModal = ({
       await updateDoc(doc(db, "plombs", formData.plombId), {
         installedOn: formData.objectId,
         installedMeterId: formData.meterId,
+        installedPartName: formData.partName, // Название части
         installedDate: formData.installedDate,
         installedBy: currentUserId,
         installedByEmail: userData?.email || "",
@@ -498,7 +572,7 @@ const AddPlombModal = ({
 
       await logCreate(
         MODULES.SETTINGS,
-        `Пломба ўрнатилди: ${formData.series}-${formData.number} → ${formData.objectName}`,
+        `Пломба ўрнатилди: ${formData.series}-${formData.number} → ${formData.objectName} (${formData.partName})`,
         formData.plombId
       );
 
@@ -741,6 +815,86 @@ const AddPlombModal = ({
                     )}
                   </>
                 )}
+              </div>
+            )}
+
+            {/* Часть установки пломбы - появляется при выборе счётчика */}
+            {formData.meterTypeId && availableParts.length > 0 && (
+              <div className="relative">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                  <Shield size={16} />
+                  Пломба ўрнатиладиган қисм *
+                </label>
+
+                <div
+                  onClick={() => setShowPartDropdown(!showPartDropdown)}
+                  className={`w-full px-4 py-3 border rounded-xl cursor-pointer flex items-center justify-between bg-white transition-all ${
+                    showPartDropdown
+                      ? "border-green-500 ring-2 ring-green-200"
+                      : "border-gray-200 hover:border-green-300"
+                  }`}
+                >
+                  <span
+                    className={
+                      formData.partName ? "text-gray-800" : "text-gray-400"
+                    }
+                  >
+                    {formData.partName || "Қисмни танланг..."}
+                  </span>
+                  <ChevronDown
+                    size={18}
+                    className={`text-gray-400 transition-transform ${
+                      showPartDropdown ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+
+                {showPartDropdown && (
+                  <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                    {availableParts.map((part, index) => (
+                      <div
+                        key={index}
+                        onClick={() => handlePartSelect(part.name)}
+                        className={`px-4 py-3 hover:bg-green-50 cursor-pointer border-b last:border-b-0 flex items-center justify-between ${
+                          formData.partName === part.name ? "bg-green-50" : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                            <span className="text-green-700 font-bold text-sm">
+                              {index + 1}
+                            </span>
+                          </div>
+                          <span className="font-medium text-gray-800">
+                            {part.name}
+                          </span>
+                        </div>
+                        {formData.partName === part.name && (
+                          <CheckCircle className="text-green-500" size={16} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 mt-1">
+                  Ушбу ҳисоблагич тури учун {availableParts.length} та қисм
+                  мавжуд
+                </p>
+              </div>
+            )}
+
+            {/* Если у типа счётчика нет частей */}
+            {formData.meterTypeId && availableParts.length === 0 && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
+                <AlertCircle
+                  className="text-yellow-600 flex-shrink-0 mt-0.5"
+                  size={18}
+                />
+                <div className="text-sm text-yellow-700">
+                  Бу ҳисоблагич турида пломба ўрнатиладиган қисмлар
+                  аниқланмаган. Илтимос, администраторга мурожаат қилинг.
+                </div>
               </div>
             )}
 
